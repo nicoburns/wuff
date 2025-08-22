@@ -18,13 +18,15 @@ pub const kTtcFontFlavor: u32 = 0x74746366;
 pub const kSfntHeaderSize: usize = 12;
 pub const kSfntEntrySize: usize = 16;
 
+#[derive(Copy, Clone)]
 pub struct Point {
     pub x: i32,
     pub y: i32,
     pub on_curve: bool,
 }
 
-pub struct Table<'a> {
+#[derive(Clone)]
+pub struct Table {
     pub tag: u32,
     pub flags: u32,
     pub src_offset: u32,
@@ -34,15 +36,15 @@ pub struct Table<'a> {
 
     pub dst_offset: u32,
     pub dst_length: u32,
-    pub dst_data: &'a [u8],
+    // pub dst_data: &'a [u8],
 }
 
-impl PartialEq for Table<'_> {
+impl PartialEq for Table {
     fn eq(&self, other: &Self) -> bool {
         self.tag.eq(&other.tag)
     }
 }
-impl PartialOrd for Table<'_> {
+impl PartialOrd for Table {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.tag.partial_cmp(&other.tag)
     }

@@ -143,6 +143,10 @@ impl Buffer<'_> {
         true
     }
 
+    pub fn remaining_as_slice(&self) -> &[u8] {
+        &self.buffer[self.offset..]
+    }
+
     pub fn buffer(&self) -> &[u8] {
         self.buffer
     }

@@ -5,11 +5,13 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
 #![allow(clippy::needless_range_loop)]
+#![allow(clippy::collapsible_if)]
 
 pub mod buffer;
 pub mod table_tags;
 pub mod variable_length;
 pub mod woff2_common;
+pub mod woff2_dec;
 
 #[inline(always)]
 pub fn PREDICT_FALSE(cond: bool) -> bool {
@@ -44,6 +46,13 @@ trait WOFF2Out {
     fn WriteAtOffset(&mut self, src: &[u8], offset: usize) -> bool;
 
     fn Size(&self) -> usize;
+}
+
+struct Woff2MemoryOut;
+impl Woff2MemoryOut {
+    fn new() -> Self {
+        Woff2MemoryOut
+    }
 }
 
 #[inline]

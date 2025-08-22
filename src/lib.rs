@@ -1,14 +1,6 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! Pure Rust WOFF2 decoder
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub mod table_tags;

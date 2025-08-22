@@ -6,6 +6,7 @@
 #![allow(dead_code)]
 #![allow(clippy::needless_range_loop)]
 
+pub mod buffer;
 pub mod table_tags;
 pub mod woff2_common;
 

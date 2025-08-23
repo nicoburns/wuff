@@ -26,6 +26,26 @@ pub fn FONT_COMPRESSION_FAILURE() -> bool {
     false
 }
 
+/// Output interface for the woff2 decoding.
+///
+/// Writes to arbitrary offsets are supported to facilitate updating offset
+/// table and checksums after tables are ready. Reading the current size is
+/// supported so a 'loca' table can be built up while writing glyphs.
+///
+/// By default limits size to kDefaultMaxSize.
+///
+trait WOFF2Out {
+    /// Append n bytes of data from buf.
+    /// Return true if all written, false otherwise.
+    fn Write(&mut self, src: &[u8]) -> bool;
+
+    /// Write n bytes of data from buf at offset.
+    /// Return true if all written, false otherwise.
+    fn WriteAtOffset(&mut self, src: &[u8], offset: usize) -> bool;
+
+    fn Size(&self) -> usize;
+}
+
 #[inline]
 fn StoreU32(dst: &mut [u8], offset: usize, x: u32) -> usize {
     dst[offset] = (x >> 24) as u8;

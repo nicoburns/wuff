@@ -8,6 +8,7 @@
 
 pub mod buffer;
 pub mod table_tags;
+pub mod variable_length;
 pub mod woff2_common;
 
 #[inline(always)]
@@ -19,7 +20,6 @@ pub fn PREDICT_FALSE(cond: bool) -> bool {
 pub fn PREDICT_TRUE(cond: bool) -> bool {
     cond
 }
-
 
 #[inline(always)]
 pub fn FONT_COMPRESSION_FAILURE() -> bool {

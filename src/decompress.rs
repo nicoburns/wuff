@@ -21,20 +21,15 @@ pub fn decompress_woff2(raw_woff_data: &[u8], out: &mut impl BufMut) -> Result<(
     let header = WoffHeader::parse(&mut input)?;
     bail_if!(header.woff_version != WoffVersion::Woff2);
 
-    let mut table_directory = Woff2TableDirectory::parse(&mut input, header.num_tables as usize)?;
+    let table_directory = Woff2TableDirectory::parse(&mut input, header.num_tables as usize)?;
     let mut collection_directory = if header.is_collection() {
-        Some(CollectionDirectory::parse(&mut input, &table_directory)?)
+        CollectionDirectory::parse(&mut input, &table_directory)?
     } else {
-        None
+        CollectionDirectory::generate_for_single_font(header.flavor, &table_directory)
     };
 
     // Re-order tables in output (OTSpec) order
-    if let Some(collection_directory) = collection_directory.as_mut() {
-        collection_directory.sort_tables_within_each_font(&table_directory);
-    } else {
-        // TODO: sort copy. Do not sort original table.
-        // table_directory.sort_tables();
-    }
+    collection_directory.sort_tables_within_each_font(&table_directory);
 
     // Compute compression ratio
     let compression_ratio: f32 = (header.total_sfnt_size as f32) / (raw_woff_data.len() as f32);

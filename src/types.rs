@@ -211,9 +211,9 @@ impl Woff2TableDirectory {
         })
     }
 
-    // pub fn sort_tables(&mut self) {
-    //     self.tables.sort_by_key(|table| table.tag);
-    // }
+    pub fn sort_tables(&mut self) {
+        self.tables.sort_by_key(|table| table.tag);
+    }
 }
 
 /// <https://www.w3.org/TR/WOFF2/#table_dir_format>
@@ -290,7 +290,7 @@ impl Woff2TableDirectoryEntry {
 
 /// <https://www.w3.org/TR/WOFF2/#collection_dir_format>
 pub struct CollectionDirectory {
-    /// The "sfnt version" of the font
+    /// The Version of the TTC Header in the original font.
     version: u32,
     /// Number of fonts in the file
     fonts: Vec<CollectionDirectoryEntry>,
@@ -315,6 +315,19 @@ impl CollectionDirectory {
         Ok(Self { version, fonts })
     }
 
+    /// Generate a fake `CollectionDirectory` for a single font so that we can share
+    /// serialization logic between collection and single fonts.
+    pub fn generate_for_single_font(flavor: Tag, table_directory: &Woff2TableDirectory) -> Self {
+        let table_indices: Vec<u16> = (0..(table_directory.len() as u16)).collect();
+        Self {
+            version: 0x00010000, // Hardcode: will be ignored
+            fonts: vec![CollectionDirectoryEntry {
+                flavor,
+                table_indices,
+            }],
+        }
+    }
+
     pub fn sort_tables_within_each_font(&mut self, tables: &Woff2TableDirectory) {
         for font in &mut self.fonts {
             font.table_indices
@@ -326,7 +339,7 @@ impl CollectionDirectory {
 /// <https://www.w3.org/TR/WOFF2/#collection_dir_format>
 pub struct CollectionDirectoryEntry {
     /// The "sfnt version" of the font
-    flavor: u32,
+    flavor: Tag,
     /// In a TTC file, each font reference some subset of the tables in the file.
     /// This field records which tables this particular font references.
     table_indices: Vec<u16>, //255UInt16
@@ -335,7 +348,7 @@ pub struct CollectionDirectoryEntry {
 impl CollectionDirectoryEntry {
     pub fn parse(input: &mut impl Buf, tables: &Woff2TableDirectory) -> Result<Self, WuffErr> {
         let num_tables = input.try_get_variable_255_u16()?;
-        let flavor = input.try_get_u32()?;
+        let flavor = Tag::from_u32(input.try_get_u32()?);
 
         bail_if!(num_tables == 0);
 

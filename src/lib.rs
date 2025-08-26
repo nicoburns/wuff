@@ -8,7 +8,11 @@
 #![allow(clippy::collapsible_if)]
 
 pub mod buffer;
+mod decompress;
+mod error;
+mod parse;
 pub mod table_tags;
+mod types;
 pub mod variable_length;
 pub mod woff2_common;
 pub mod woff2_dec;

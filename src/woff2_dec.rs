@@ -13,7 +13,7 @@ use brotli_decompressor::{BrotliResult, brotli_decode};
 
 use crate::buffer::Buffer;
 use crate::table_tags::{
-    kGlyfTableTag, kHeadTableTag, kHheaTableTag, kHmtxTableTag, kKnownTags, kLocaTableTag,
+    KNOWN_TABLE_TAGS, kGlyfTableTag, kHeadTableTag, kHheaTableTag, kHmtxTableTag, kLocaTableTag,
 };
 use crate::variable_length::{Read255UShort, ReadBase128};
 use crate::woff2_common::{
@@ -905,7 +905,7 @@ fn ReadTableDirectory(file: &mut Buffer<'_>, tables: &mut Vec<Table>, num_tables
                 return FONT_COMPRESSION_FAILURE();
             }
         } else {
-            tag = kKnownTags[(flag_byte & 0x3f) as usize];
+            tag = u32::from_be_bytes(KNOWN_TABLE_TAGS[(flag_byte & 0x3f) as usize].to_be_bytes());
         }
         let mut flags: u32 = 0;
         let xform_version: u8 = (flag_byte >> 6) & 0x03;

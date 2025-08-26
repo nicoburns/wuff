@@ -6,6 +6,8 @@
 
 //! Font table tags
 
+use font_types::Tag;
+
 // Tags of popular tables.
 pub const kGlyfTableTag: u32 = 0x676c7966;
 pub const kHeadTableTag: u32 = 0x68656164;
@@ -16,73 +18,68 @@ pub const kHmtxTableTag: u32 = 0x686d7478;
 pub const kHheaTableTag: u32 = 0x68686561;
 pub const kMaxpTableTag: u32 = 0x6d617870;
 
-// Note that the byte order is big-endian, not the same as ots.cc
-const fn TAG(a: u8, b: u8, c: u8, d: u8) -> u32 {
-    ((a as u32) << 24) | ((b as u32) << 16) | ((c as u32) << 8) | (d as u32)
-}
-
-pub static kKnownTags: [u32; 63] = [
-    TAG(b'c', b'm', b'a', b'p'), // 0
-    TAG(b'h', b'e', b'a', b'd'), // 1
-    TAG(b'h', b'h', b'e', b'a'), // 2
-    TAG(b'h', b'm', b't', b'x'), // 3
-    TAG(b'm', b'a', b'x', b'p'), // 4
-    TAG(b'n', b'a', b'm', b'e'), // 5
-    TAG(b'O', b'S', b'/', b'2'), // 6
-    TAG(b'p', b'o', b's', b't'), // 7
-    TAG(b'c', b'v', b't', b' '), // 8
-    TAG(b'f', b'p', b'g', b'm'), // 9
-    TAG(b'g', b'l', b'y', b'f'), // 10
-    TAG(b'l', b'o', b'c', b'a'), // 11
-    TAG(b'p', b'r', b'e', b'p'), // 12
-    TAG(b'C', b'F', b'F', b' '), // 13
-    TAG(b'V', b'O', b'R', b'G'), // 14
-    TAG(b'E', b'B', b'D', b'T'), // 15
-    TAG(b'E', b'B', b'L', b'C'), // 16
-    TAG(b'g', b'a', b's', b'p'), // 17
-    TAG(b'h', b'd', b'm', b'x'), // 18
-    TAG(b'k', b'e', b'r', b'n'), // 19
-    TAG(b'L', b'T', b'S', b'H'), // 20
-    TAG(b'P', b'C', b'L', b'T'), // 21
-    TAG(b'V', b'D', b'M', b'X'), // 22
-    TAG(b'v', b'h', b'e', b'a'), // 23
-    TAG(b'v', b'm', b't', b'x'), // 24
-    TAG(b'B', b'A', b'S', b'E'), // 25
-    TAG(b'G', b'D', b'E', b'F'), // 26
-    TAG(b'G', b'P', b'O', b'S'), // 27
-    TAG(b'G', b'S', b'U', b'B'), // 28
-    TAG(b'E', b'B', b'S', b'C'), // 29
-    TAG(b'J', b'S', b'T', b'F'), // 30
-    TAG(b'M', b'A', b'T', b'H'), // 31
-    TAG(b'C', b'B', b'D', b'T'), // 32
-    TAG(b'C', b'B', b'L', b'C'), // 33
-    TAG(b'C', b'O', b'L', b'R'), // 34
-    TAG(b'C', b'P', b'A', b'L'), // 35
-    TAG(b'S', b'V', b'G', b' '), // 36
-    TAG(b's', b'b', b'i', b'x'), // 37
-    TAG(b'a', b'c', b'n', b't'), // 38
-    TAG(b'a', b'v', b'a', b'r'), // 39
-    TAG(b'b', b'd', b'a', b't'), // 40
-    TAG(b'b', b'l', b'o', b'c'), // 41
-    TAG(b'b', b's', b'l', b'n'), // 42
-    TAG(b'c', b'v', b'a', b'r'), // 43
-    TAG(b'f', b'd', b's', b'c'), // 44
-    TAG(b'f', b'e', b'a', b't'), // 45
-    TAG(b'f', b'm', b't', b'x'), // 46
-    TAG(b'f', b'v', b'a', b'r'), // 47
-    TAG(b'g', b'v', b'a', b'r'), // 48
-    TAG(b'h', b's', b't', b'y'), // 49
-    TAG(b'j', b'u', b's', b't'), // 50
-    TAG(b'l', b'c', b'a', b'r'), // 51
-    TAG(b'm', b'o', b'r', b't'), // 52
-    TAG(b'm', b'o', b'r', b'x'), // 53
-    TAG(b'o', b'p', b'b', b'd'), // 54
-    TAG(b'p', b'r', b'o', b'p'), // 55
-    TAG(b't', b'r', b'a', b'k'), // 56
-    TAG(b'Z', b'a', b'p', b'f'), // 57
-    TAG(b'S', b'i', b'l', b'f'), // 58
-    TAG(b'G', b'l', b'a', b't'), // 59
-    TAG(b'G', b'l', b'o', b'c'), // 60
-    TAG(b'F', b'e', b'a', b't'), // 61
-    TAG(b'S', b'i', b'l', b'l'), // 62
+pub static KNOWN_TABLE_TAGS: [Tag; 63] = [
+    Tag::new(b"cmap"), // 0
+    Tag::new(b"head"), // 1
+    Tag::new(b"hhea"), // 2
+    Tag::new(b"hmtx"), // 3
+    Tag::new(b"maxp"), // 4
+    Tag::new(b"name"), // 5
+    Tag::new(b"OS/2"), // 6
+    Tag::new(b"post"), // 7
+    Tag::new(b"cvt "), // 8
+    Tag::new(b"fpgm"), // 9
+    Tag::new(b"glyf"), // 10
+    Tag::new(b"loca"), // 11
+    Tag::new(b"prep"), // 12
+    Tag::new(b"CFF "), // 13
+    Tag::new(b"VORG"), // 14
+    Tag::new(b"EBDT"), // 15
+    Tag::new(b"EBLC"), // 16
+    Tag::new(b"gasp"), // 17
+    Tag::new(b"hdmx"), // 18
+    Tag::new(b"kern"), // 19
+    Tag::new(b"LTSH"), // 20
+    Tag::new(b"PCLT"), // 21
+    Tag::new(b"VDMX"), // 22
+    Tag::new(b"vhea"), // 23
+    Tag::new(b"vmtx"), // 24
+    Tag::new(b"BASE"), // 25
+    Tag::new(b"GDEF"), // 26
+    Tag::new(b"GPOS"), // 27
+    Tag::new(b"GSUB"), // 28
+    Tag::new(b"EBSC"), // 29
+    Tag::new(b"JSTF"), // 30
+    Tag::new(b"MATH"), // 31
+    Tag::new(b"CBDT"), // 32
+    Tag::new(b"CBLC"), // 33
+    Tag::new(b"COLR"), // 34
+    Tag::new(b"CPAL"), // 35
+    Tag::new(b"SVG "), // 36
+    Tag::new(b"sbix"), // 37
+    Tag::new(b"acnt"), // 38
+    Tag::new(b"avar"), // 39
+    Tag::new(b"bdat"), // 40
+    Tag::new(b"bloc"), // 41
+    Tag::new(b"bsln"), // 42
+    Tag::new(b"cvar"), // 43
+    Tag::new(b"fdsc"), // 44
+    Tag::new(b"feat"), // 45
+    Tag::new(b"fmtx"), // 46
+    Tag::new(b"fvar"), // 47
+    Tag::new(b"gvar"), // 48
+    Tag::new(b"hsty"), // 49
+    Tag::new(b"just"), // 50
+    Tag::new(b"lcar"), // 51
+    Tag::new(b"mort"), // 52
+    Tag::new(b"morx"), // 53
+    Tag::new(b"opbd"), // 54
+    Tag::new(b"prop"), // 55
+    Tag::new(b"trak"), // 56
+    Tag::new(b"Zapf"), // 57
+    Tag::new(b"Silf"), // 58
+    Tag::new(b"Glat"), // 59
+    Tag::new(b"Gloc"), // 60
+    Tag::new(b"Feat"), // 61
+    Tag::new(b"Sill"), // 62
 ];

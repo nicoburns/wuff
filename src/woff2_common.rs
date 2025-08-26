@@ -92,11 +92,11 @@ pub(crate) fn CollectionHeaderSize(header_version: u32, num_fonts: u32) -> usize
 
 /// Compute checksum over size bytes of buf
 pub(crate) fn ComputeULongSum(buf: &[u8], size: usize) -> u32 {
-    ComputeULongSumSlice(&buf[0..size])
+    compute_checksum(&buf[0..size])
 }
 
 /// Compute checksum over size bytes of buf
-pub(crate) fn ComputeULongSumSlice(buf: &[u8]) -> u32 {
+pub(crate) fn compute_checksum(buf: &[u8]) -> u32 {
     let mut checksum: u32 = 0;
     let mut iter = buf.chunks_exact(4);
     for chunk in &mut iter {
@@ -104,7 +104,7 @@ pub(crate) fn ComputeULongSumSlice(buf: &[u8]) -> u32 {
         checksum += u32::from_be_bytes(bytes);
     }
 
-    // Treat size not aligned on 4 as if it were padded to 4 with 0's.
+    // Treat sizes not aligned on 4 as if it were padded to 4 with 0's.
     checksum += match iter.remainder() {
         &[a, b, c] => u32::from_be_bytes([a, b, c, 0]),
         &[a, b] => u32::from_be_bytes([a, b, 0, 0]),

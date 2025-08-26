@@ -1428,13 +1428,9 @@ fn WriteHeaders(
     if hdr.header_version != 0 {
         // collection; we have to sort the table offset vector in each font
         for ttc_font in &mut hdr.ttc_fonts {
-            let mut sorted_index_by_tag: BTreeMap<u32, u16> = BTreeMap::new();
-            for &table_index in &ttc_font.table_indices {
-                sorted_index_by_tag.insert(hdr.tables[table_index as usize].tag, table_index);
-            }
-            for (index, i) in sorted_index_by_tag.values().enumerate() {
-                ttc_font.table_indices[index] = *i;
-            }
+            ttc_font
+                .table_indices
+                .sort_by_cached_key(|idx| hdr.tables[*idx as usize].tag);
         }
     } else {
         sorted_tables.sort_by_key(|table| table.tag);

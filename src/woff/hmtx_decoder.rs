@@ -5,16 +5,13 @@ use crate::{
     woff2_common::compute_checksum,
 };
 
+/// Data decoded from the WOFF2 hmtx table which can be used to reconstruct
+/// an open type hmtx table.
 pub struct HmtxData {
     num_glyphs: u16,
     num_hmetrics: u16,
     advance_widths: Vec<u16>,
     lsbs: Vec<i16>,
-}
-
-pub struct TableMetadata {
-    length: usize,
-    checksum: u32,
 }
 
 /// Decode a WOFF2 transformed hmtx table
@@ -95,13 +92,4 @@ pub(crate) fn generate_hmtx_table(hmtx_data: &HmtxData) -> Result<Vec<u8>, WuffE
     }
 
     Ok(hmtx_table)
-
-    // let checksum = compute_checksum(&hmtx_table);
-    // out.put_slice(&hmtx_table);
-
-    // // metadata.dst_offset set in ReconstructFont
-    // Ok(TableMetadata {
-    //     length: hmtx_output_size,
-    //     checksum,
-    // })
 }

@@ -14,6 +14,7 @@ mod parse;
 pub mod table_tags;
 mod types;
 pub mod variable_length;
+mod woff;
 pub mod woff2_common;
 pub mod woff2_dec;
 

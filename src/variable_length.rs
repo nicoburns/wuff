@@ -7,8 +7,28 @@
 //! Helper functions for woff2 variable length types: 255UInt16 and UIntBase128
 
 use arrayvec::ArrayVec;
+use bytes::Buf;
 
-use crate::{FONT_COMPRESSION_FAILURE, buffer::Buffer};
+use crate::{
+    FONT_COMPRESSION_FAILURE,
+    buffer::Buffer,
+    error::{WuffErr, bail, bail_if},
+};
+
+pub trait BufVariableExt {
+    fn try_get_variable_255_u16(&mut self) -> Result<u16, WuffErr>;
+    fn try_get_variable_128_u32(&mut self) -> Result<u32, WuffErr>;
+}
+
+impl<T: bytes::Buf> BufVariableExt for T {
+    fn try_get_variable_255_u16(&mut self) -> Result<u16, WuffErr> {
+        Read255UShort(self).map(|val| val as u16)
+    }
+
+    fn try_get_variable_128_u32(&mut self) -> Result<u32, WuffErr> {
+        ReadBase128(self)
+    }
+}
 
 fn Size255UShort(value: u16) -> usize {
     if value < 253 {
@@ -47,67 +67,38 @@ pub(crate) fn Store255UShort(val: i32, offset: &mut usize, dst: &mut [u8]) {
 }
 
 // Based on section 6.1.1 of MicroType Express draft spec
-pub(crate) fn Read255UShort(buf: &mut Buffer<'_>, value: &mut u32) -> bool {
+pub(crate) fn Read255UShort(buf: &mut impl Buf) -> Result<u32, WuffErr> {
     const kWordCode: u8 = 253;
     const kOneMoreByteCode2: u8 = 254;
     const kOneMoreByteCode1: u8 = 255;
     const kLowestUCode: u32 = 253;
 
-    let mut code: u8 = 0;
-    if !buf.ReadU8(&mut code) {
-        return FONT_COMPRESSION_FAILURE();
-    }
-
-    if code == kWordCode {
-        let mut result: u16 = 0;
-        if !buf.ReadU16(&mut result) {
-            return FONT_COMPRESSION_FAILURE();
-        }
-        *value = result as u32;
-        true
-    } else if code == kOneMoreByteCode1 {
-        let mut result: u8 = 0;
-        if !buf.ReadU8(&mut result) {
-            return FONT_COMPRESSION_FAILURE();
-        }
-        *value = (result as u32) + kLowestUCode;
-        true
-    } else if code == kOneMoreByteCode2 {
-        let mut result: u8 = 0;
-        if !buf.ReadU8(&mut result) {
-            return FONT_COMPRESSION_FAILURE();
-        }
-        *value = (result as u32) + kLowestUCode * 2;
-        true
-    } else {
-        *value = code as u32;
-        true
+    let code = buf.try_get_u8()?;
+    match code {
+        kWordCode => Ok(buf.try_get_u16()? as u32),
+        kOneMoreByteCode1 => Ok(buf.try_get_u8()? as u32 + kLowestUCode),
+        kOneMoreByteCode2 => Ok(buf.try_get_u8()? as u32 + kLowestUCode * 2),
+        _ => Ok(code as u32),
     }
 }
 
-pub(crate) fn ReadBase128(buf: &mut Buffer<'_>, value: &mut u32) -> bool {
+pub(crate) fn ReadBase128(buf: &mut impl Buf) -> Result<u32, WuffErr> {
     let mut result: u32 = 0;
     for i in 0..5 {
-        let mut code: u8 = 0;
-        if !buf.ReadU8(&mut code) {
-            return FONT_COMPRESSION_FAILURE();
-        }
+        let code = buf.try_get_u8()?;
+
         // Leading zeros are invalid.
-        if i == 0 && code == 0x80 {
-            return FONT_COMPRESSION_FAILURE();
-        }
+        bail_if!(i == 0 && code == 0x80);
         // If any of the top seven bits are set then we're about to overflow.
-        if (result & 0xfe000000) != 0 {
-            return FONT_COMPRESSION_FAILURE();
-        }
+        bail_if!((result & 0xfe000000) != 0);
+
         result = (result << 7) | ((code & 0x7f) as u32);
         if (code & 0x80) == 0 {
-            *value = result;
-            return true;
+            return Ok(result);
         }
     }
     // Make sure not to exceed the size bound
-    FONT_COMPRESSION_FAILURE()
+    bail!();
 }
 
 fn Base128Size(mut n: usize) -> usize {

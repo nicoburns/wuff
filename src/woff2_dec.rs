@@ -12,6 +12,7 @@ use arrayvec::ArrayVec;
 use brotli_decompressor::{BrotliResult, brotli_decode};
 
 use crate::buffer::Buffer;
+use crate::error::unwrap_or_bail;
 use crate::table_tags::{
     KNOWN_TABLE_TAGS, kGlyfTableTag, kHeadTableTag, kHheaTableTag, kHmtxTableTag, kLocaTableTag,
 };
@@ -571,10 +572,8 @@ fn ReconstructGlyf(
             )) {
                 return FONT_COMPRESSION_FAILURE();
             }
-            if have_instructions
-                && PREDICT_FALSE(!Read255UShort(&mut glyph_stream, &mut instruction_size))
-            {
-                return FONT_COMPRESSION_FAILURE();
+            if have_instructions {
+                instruction_size = unwrap_or_bail!(Read255UShort(&mut glyph_stream));
             }
 
             let size_needed: usize = 12 + composite_size + (instruction_size as usize);
@@ -610,11 +609,8 @@ fn ReconstructGlyf(
             // simple glyph
             let mut n_points_vec = Vec::with_capacity(n_contours as usize);
             let mut total_n_points: u32 = 0;
-            let mut n_points_contour: u32 = 0;
             for _ in 0..n_contours {
-                if PREDICT_FALSE(!Read255UShort(&mut n_points_stream, &mut n_points_contour)) {
-                    return FONT_COMPRESSION_FAILURE();
-                }
+                let n_points_contour = unwrap_or_bail!(Read255UShort(&mut n_points_stream));
                 n_points_vec.push(n_points_contour);
                 if PREDICT_FALSE(total_n_points.checked_add(n_points_contour).is_none()) {
                     return FONT_COMPRESSION_FAILURE();
@@ -649,10 +645,7 @@ fn ReconstructGlyf(
                 return FONT_COMPRESSION_FAILURE();
             }
 
-            let mut instruction_size: u32 = 0;
-            if PREDICT_FALSE(!Read255UShort(&mut glyph_stream, &mut instruction_size)) {
-                return FONT_COMPRESSION_FAILURE();
-            }
+            let instruction_size: u32 = unwrap_or_bail!(Read255UShort(&mut glyph_stream));
 
             if PREDICT_FALSE(total_n_points >= (1 << 27) || instruction_size >= (1 << 30)) {
                 return FONT_COMPRESSION_FAILURE();
@@ -920,15 +913,10 @@ fn ReadTableDirectory(file: &mut Buffer<'_>, tables: &mut Vec<Table>, num_tables
         }
         flags |= xform_version as u32;
 
-        let mut dst_length: u32 = 0;
-        if PREDICT_FALSE(!ReadBase128(file, &mut dst_length)) {
-            return FONT_COMPRESSION_FAILURE();
-        }
+        let dst_length: u32 = unwrap_or_bail!(ReadBase128(file));
         let mut transform_length: u32 = dst_length;
         if (flags & kWoff2FlagsTransform) != 0 {
-            if PREDICT_FALSE(!ReadBase128(file, &mut transform_length)) {
-                return FONT_COMPRESSION_FAILURE();
-            }
+            transform_length = unwrap_or_bail!(ReadBase128(file));
             if PREDICT_FALSE(tag == kLocaTableTag && transform_length != 0) {
                 return FONT_COMPRESSION_FAILURE();
             }
@@ -1312,15 +1300,15 @@ fn ReadWOFF2Header(data: &[u8], hdr: &mut WOFF2Header) -> bool {
         if PREDICT_FALSE(hdr.header_version != 0x00010000 && hdr.header_version != 0x00020000) {
             return FONT_COMPRESSION_FAILURE();
         }
-        let mut num_fonts: u32 = 0;
-        if PREDICT_FALSE(!Read255UShort(&mut file, &mut num_fonts) || num_fonts == 0) {
+        let num_fonts: u32 = unwrap_or_bail!(Read255UShort(&mut file));
+        if PREDICT_FALSE(num_fonts == 0) {
             return FONT_COMPRESSION_FAILURE();
         }
         hdr.ttc_fonts.reserve_exact(num_fonts as usize);
 
         for _ in 0..num_fonts {
-            let mut num_tables: u32 = 0;
-            if PREDICT_FALSE(!Read255UShort(&mut file, &mut num_tables) || num_tables == 0) {
+            let num_tables: u32 = unwrap_or_bail!(Read255UShort(&mut file));
+            if PREDICT_FALSE(num_tables == 0) {
                 return FONT_COMPRESSION_FAILURE();
             }
             let mut flavor: u32 = 0;
@@ -1334,10 +1322,8 @@ fn ReadWOFF2Header(data: &[u8], hdr: &mut WOFF2Header) -> bool {
             let mut loca_idx: u32 = 0;
 
             for _ in 0..num_tables {
-                let mut table_idx: u32 = 0;
-                if PREDICT_FALSE(
-                    !Read255UShort(&mut file, &mut table_idx) || table_idx >= hdr.num_tables as u32,
-                ) {
+                let table_idx: u32 = unwrap_or_bail!(Read255UShort(&mut file));
+                if PREDICT_FALSE(table_idx >= hdr.num_tables as u32) {
                     return FONT_COMPRESSION_FAILURE();
                 }
                 table_indices.push(table_idx as u16);

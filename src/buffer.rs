@@ -19,6 +19,22 @@ pub struct Buffer<'a> {
     offset: usize,
 }
 
+impl bytes::Buf for Buffer<'_> {
+    fn remaining(&self) -> usize {
+        self.buffer.len() - self.offset
+    }
+
+    fn chunk(&self) -> &[u8] {
+        self.remaining_as_slice()
+    }
+
+    fn advance(&mut self, cnt: usize) {
+        if !self.Skip(cnt) {
+            panic!("Tried to advance past the end of the buffer");
+        }
+    }
+}
+
 impl Buffer<'_> {
     pub fn new<'b>(data: &'b [u8]) -> Buffer<'b> {
         Buffer {

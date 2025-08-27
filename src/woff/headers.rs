@@ -94,9 +94,9 @@ impl WoffHeader {
         // Read signature, validate it, and determine WOFF version
         let signature = Tag::from_u32(input.try_get_u32()?);
         let woff_version = match signature.as_ref() {
-            b"woFF" => WoffVersion::Woff1,
-            b"woF2" => WoffVersion::Woff2,
-            _ => return Err(WuffErr::GenericError),
+            b"wOFF" => WoffVersion::Woff1,
+            b"wOF2" => WoffVersion::Woff2,
+            _ => bail!(),
         };
 
         // Parse other fields

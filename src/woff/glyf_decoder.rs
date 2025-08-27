@@ -36,19 +36,19 @@ const COMPOSITE_GLYPH_BEGIN: usize = 10;
 
 pub struct GlyfAndLocaData {
     /// The number of glyphs in the glyf table
-    num_glyphs: u16,
+    pub num_glyphs: u16,
     /// loca index format
-    index_format: u16,
+    pub index_format: u16,
     /// The x_min of the bounding box of each glyph. Used to reconstruct hmtx table
-    x_mins: Vec<i16>,
+    pub x_mins: Vec<i16>,
     /// Encoded Open Type "glyf" table
-    glyf_table: Vec<u8>,
+    pub glyf_table: Vec<u8>,
     /// Checksum for "glyf" table
-    glyf_checksum: u32,
+    pub glyf_checksum: u32,
     /// Encoded Open Type "loca" table
-    loca_table: Vec<u8>,
+    pub loca_table: Vec<u8>,
     /// Checksum for "loca" table
-    loca_checksum: u32,
+    pub loca_checksum: u32,
 }
 
 /// Decode a WOFF2 transformed glyf table
@@ -264,7 +264,7 @@ impl GlyfDecoder<'_> {
         self.glyph_stream.advance(triplet_bytes_consumed); // FIXME: pass glyph_stream directly to decode_triplet instead?
 
         let instruction_size: u16 = self.glyph_stream.try_get_variable_255_u16()?;
-        bail_if!(total_n_points >= (1 << 27) || instruction_size >= (1 << 30));
+        bail_if!(total_n_points >= (1 << 27) || instruction_size as u32 >= (1 << 30));
 
         // Reserve needed size to reduce allocations
         let size_needed: usize =

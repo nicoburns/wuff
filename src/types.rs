@@ -28,24 +28,26 @@ pub struct Woff2 {
 /// For a TTC, we store one per font in the collection.
 /// For a single font we store exactly one of these in total.
 #[derive(Clone, Default)]
-struct WOFF2FontInfo {
+pub(crate) struct WOFF2FontInfo {
     /// The total number of glyphs in the font
-    num_glyphs: u16,
+    pub num_glyphs: u16,
     /// The number of hmetrics (= number of proportional glyphs)
     /// (the number of monospace glyphs is `num_glphs - num_hmetrics`)
-    num_hmetrics: u16,
+    pub num_hmetrics: u16,
     /// Index format of the "loca" table.
     /// Read from the header of WOFF's *transformed* "glyf" table
     ///
     /// See <https://learn.microsoft.com/en-us/typography/opentype/spec/loca>
     /// And <https://www.w3.org/TR/WOFF2/#glyf_table_format>
-    index_format: u16,
+    pub index_format: u16,
     /// The minimum x coordinate for each glyph in the font.
     /// Read from the "glyf" table. Used to reconstruct the "hmtx" table.
-    x_mins: Vec<i16>,
+    pub x_mins: Vec<i16>,
     /// Map of table tag to the byte offset of that table's entry in the table directory in the output file
     /// Allows the checksum, offset and length of the table to be written into the table directory once they are known.
-    table_entry_by_tag: HashMap<Tag, usize>,
+    pub table_entry_by_tag: HashMap<Tag, usize>,
+    /// Checksum of the ouput header
+    pub header_checksum: u32,
 }
 
 /// WOFF header that can represent either a WOFF1 or WOFF2 header
@@ -147,9 +149,9 @@ impl WoffHeader {
 }
 
 pub struct TableDirectory<T> {
-    tables: Vec<T>,
+    pub tables: Vec<T>,
     /// Size of the table directory (in the WOFF) in bytes
-    size: usize,
+    pub size: usize,
 }
 pub type Woff2TableDirectory = TableDirectory<Woff2TableDirectoryEntry>;
 
@@ -186,16 +188,16 @@ impl Woff2TableDirectory {
         let mut tables = Vec::with_capacity(num_tables);
         for _ in 0..num_tables {
             let mut table = Woff2TableDirectoryEntry::parse(input)?;
-            table.transform_offset = offset_in_woff as u32;
+            table.woff_offset = offset_in_woff as u32;
 
             // Check for for overflow
             bail_if!(usize_will_overflow(
                 offset_in_woff,
-                table.transform_length as usize
+                table.woff_length as usize
             ));
 
             // Add the length of the table to offset_in_woff to determine the offset of the next table
-            offset_in_woff += table.transform_length as usize;
+            offset_in_woff += table.woff_length as usize;
 
             tables.push(table);
         }
@@ -219,17 +221,15 @@ impl Woff2TableDirectory {
 /// <https://www.w3.org/TR/WOFF2/#table_dir_format>
 pub struct Woff2TableDirectoryEntry {
     /// 4-byte tag (optional)
-    tag: Tag,
+    pub tag: Tag,
     /// 2 bits representing the format of the table
-    format: u8,
-    /// length of original table
-    orig_length: u32, // uBase128,
-    /// Length of the table in the WOFF (once decompressed)
-    transform_length: u32, // uBase128,
-
-    // Computed fields
-    /// Offset of the table within the CompressedFontData field of the WOFF (once decompressed)
-    transform_offset: u32,
+    pub format: u8,
+    /// Length of original table. This may be innacurate in the case of transformed tables.
+    pub orig_length: u32, // uBase128,
+    /// Offset of the table within the (decompressed) CompressedFontData field of the WOFF
+    pub woff_offset: u32, // Computed
+    /// Length of the table within the (decompressed) CompressedFontData field of the WOFF
+    pub woff_length: u32, // uBase128,
 }
 
 impl Woff2TableDirectoryEntry {
@@ -247,6 +247,12 @@ impl Woff2TableDirectoryEntry {
             _ => self.format == 0,
         }
     }
+
+    pub fn data_as_slice<'a>(&self, data: &'a [u8]) -> Result<&'a [u8], WuffErr> {
+        let end = self.woff_offset as usize + self.woff_length as usize;
+        data.get((self.woff_offset as usize)..end)
+            .ok_or(WuffErr::GenericError)
+    }
 }
 
 impl Woff2TableDirectoryEntry {
@@ -262,12 +268,12 @@ impl Woff2TableDirectoryEntry {
             },
             format,
             orig_length: input.try_get_variable_128_u32()?,
-            transform_length: input.try_get_variable_128_u32()?,
-            transform_offset: 0, // Set later
+            woff_offset: 0, // Set in TableDirectory parse function
+            woff_length: input.try_get_variable_128_u32()?,
         };
 
         // Validate
-        bail_if!(entry.tag.as_ref() == b"loca" && entry.transform_length != 0);
+        bail_if!(entry.tag.as_ref() == b"loca" && entry.woff_length != 0);
 
         Ok(entry)
     }
@@ -291,9 +297,9 @@ impl Woff2TableDirectoryEntry {
 /// <https://www.w3.org/TR/WOFF2/#collection_dir_format>
 pub struct CollectionDirectory {
     /// The Version of the TTC Header in the original font.
-    version: u32,
+    pub version: u32,
     /// Number of fonts in the file
-    fonts: Vec<CollectionDirectoryEntry>,
+    pub fonts: Vec<CollectionDirectoryEntry>,
 }
 
 impl CollectionDirectory {
@@ -319,11 +325,28 @@ impl CollectionDirectory {
     /// serialization logic between collection and single fonts.
     pub fn generate_for_single_font(flavor: Tag, table_directory: &Woff2TableDirectory) -> Self {
         let table_indices: Vec<u16> = (0..(table_directory.len() as u16)).collect();
+        let mut head_idx: Option<u16> = None;
+        let mut hhea_idx: Option<u16> = None;
+        let mut glyf_idx: Option<u16> = None;
+        let mut loca_idx: Option<u16> = None;
+        for (table_index, table) in table_directory.tables.iter().enumerate() {
+            match table.tag.as_ref() {
+                b"head" => head_idx = Some(table_index as u16),
+                b"hhea" => hhea_idx = Some(table_index as u16),
+                b"glyf" => glyf_idx = Some(table_index as u16),
+                b"loca" => loca_idx = Some(table_index as u16),
+                _ => { /* do nothing */ }
+            }
+        }
         Self {
             version: 0x00010000, // Hardcode: will be ignored
             fonts: vec![CollectionDirectoryEntry {
                 flavor,
                 table_indices,
+                head_idx,
+                hhea_idx,
+                glyf_idx,
+                loca_idx,
             }],
         }
     }
@@ -334,15 +357,63 @@ impl CollectionDirectory {
                 .sort_by_cached_key(|idx| tables[*idx as usize].tag);
         }
     }
+
+    /// Size of the collection header. 0 if version indicates this isn't a
+    /// collection. Ref http://www.microsoft.com/typography/otspec/otff.htm,
+    /// True Type Collections
+    pub(crate) fn required_size(&self) -> usize {
+        let mut size: usize = 0;
+        if self.version == 0x00020000 {
+            size += 12; // ulDsig{Tag,Length,Offset}
+        }
+        if self.version == 0x00010000 || self.version == 0x00020000 {
+            size += 12   // TTCTag, Version, numFonts
+          + 4 * (self.fonts.len()); // OffsetTable[numFonts]
+        }
+        size
+    }
+
+    /// Size of the collection header. 0 if version indicates this isn't a
+    /// collection. Ref http://www.microsoft.com/typography/otspec/otff.htm,
+    /// True Type Collections
+    pub(crate) fn collection_header_required_size(&self) -> usize {
+        let mut size: usize = 0;
+        if self.version == 0x00020000 {
+            size += 12; // ulDsig{Tag,Length,Offset}
+        }
+        if self.version == 0x00010000 || self.version == 0x00020000 {
+            size += 12   // TTCTag, Version, numFonts
+          + 4 * (self.fonts.len()); // OffsetTable[numFonts]
+        }
+        size
+    }
+
+    pub(crate) fn table_directories_required_size(&self) -> usize {
+        pub const TABLE_DIRECTORY_HEADER_SIZE: usize = 12;
+        pub const TABLE_DIRECTORY_ENTRY_SIZE: usize = 16;
+        self.collection_header_required_size()
+            + (TABLE_DIRECTORY_HEADER_SIZE * self.fonts.len())
+            + self
+                .fonts
+                .iter()
+                .map(|font| TABLE_DIRECTORY_ENTRY_SIZE * font.table_indices.len())
+                .sum::<usize>()
+    }
 }
 
 /// <https://www.w3.org/TR/WOFF2/#collection_dir_format>
 pub struct CollectionDirectoryEntry {
     /// The "sfnt version" of the font
-    flavor: Tag,
+    pub flavor: Tag,
     /// In a TTC file, each font reference some subset of the tables in the file.
     /// This field records which tables this particular font references.
-    table_indices: Vec<u16>, //255UInt16
+    pub table_indices: Vec<u16>, //255UInt16
+
+    // Check the indices of specific tables that we want random access to
+    pub head_idx: Option<u16>,
+    pub hhea_idx: Option<u16>,
+    pub glyf_idx: Option<u16>,
+    pub loca_idx: Option<u16>,
 }
 
 impl CollectionDirectoryEntry {
@@ -352,6 +423,8 @@ impl CollectionDirectoryEntry {
 
         bail_if!(num_tables == 0);
 
+        let mut head_idx: Option<u16> = None;
+        let mut hhea_idx: Option<u16> = None;
         let mut glyf_idx: Option<u16> = None;
         let mut loca_idx: Option<u16> = None;
         let mut table_indices = Vec::with_capacity(num_tables as usize);
@@ -360,6 +433,8 @@ impl CollectionDirectoryEntry {
             bail_if!(table_index as usize > tables.len());
 
             match tables[table_index as usize].tag.as_ref() {
+                b"head" => head_idx = Some(table_index),
+                b"hhea" => hhea_idx = Some(table_index),
                 b"glyf" => glyf_idx = Some(table_index),
                 b"loca" => loca_idx = Some(table_index),
                 _ => { /* do nothing */ }
@@ -384,6 +459,19 @@ impl CollectionDirectoryEntry {
         Ok(Self {
             flavor,
             table_indices,
+            head_idx,
+            hhea_idx,
+            glyf_idx,
+            loca_idx,
         })
+    }
+
+    pub fn num_tables(&self) -> usize {
+        self.table_indices.len()
+    }
+
+    /// The size required for a table directory for this font
+    pub fn table_directory_size(&self) -> usize {
+        12 + (16 * self.num_tables())
     }
 }

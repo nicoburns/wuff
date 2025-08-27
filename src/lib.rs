@@ -18,6 +18,8 @@ mod woff;
 pub mod woff2_common;
 pub mod woff2_dec;
 
+pub use decompress::{decompress_woff2, decompress_woff2_with_brotli};
+
 #[inline(always)]
 pub fn PREDICT_FALSE(cond: bool) -> bool {
     cond

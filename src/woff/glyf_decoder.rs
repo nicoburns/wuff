@@ -164,7 +164,7 @@ impl GlyfDecoder<'_> {
                 bail_with_msg_if!(glyph_has_bbox, "Empty glyph has a bbox")
             }
 
-            glyf_checksum += compute_checksum(&self.glyph_buf);
+            glyf_checksum = glyf_checksum.wrapping_add(compute_checksum(&self.glyph_buf));
 
             // Write glyph to output table and pad output
             //

@@ -205,7 +205,7 @@ impl Woff2TableDirectory {
         // Because the table directory is variable length, we compute it's size (in bytes) by tracking how
         // much data we have processed during processing. This allows us to know the offset that the next
         // section of the file begins at.
-        let size_of_directory = input.remaining() - initial_remaining;
+        let size_of_directory = initial_remaining - input.remaining();
 
         Ok(Self {
             tables,

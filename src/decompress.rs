@@ -207,7 +207,7 @@ fn reconstruct_font(
                 dst_length: table.woff_length,
                 checksum,
             };
-            table_metadata[table_idx as usize] = Some(metadata);
+            table_metadata[table_idx] = Some(metadata);
 
             out.extend_from_slice(table_data);
             out.resize(Round4!(out.len()), 0);

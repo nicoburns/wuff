@@ -449,7 +449,7 @@ impl CollectionDirectoryEntry {
             (Some(glyf_idx), Some(loca_idx)) => {
                 bail_with_msg_if!(
                     glyf_idx > loca_idx || loca_idx - glyf_idx != 1,
-                    "TTC font {i} has non-consecutive glyf/loca"
+                    "TTC font has non-consecutive glyf/loca"
                 );
             }
             (Some(_), None) | (None, Some(_)) => bail!(),

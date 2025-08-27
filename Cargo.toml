@@ -5,6 +5,7 @@ edition = "2024"
 
 [features]
 font_compression_bin = []
+debug = []
 
 [dependencies]
 arrayvec = "0.7.6"

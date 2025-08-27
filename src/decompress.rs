@@ -73,7 +73,7 @@ pub fn decompress_woff2_with_brotli(
     bail_if!(header.total_sfnt_size < 1);
     bail_with_msg_if!(
         compression_ratio > K_MAX_PLAUSIBLE_COMPRESSION_RATIO,
-        "Implausible compression ratio %.01f",
+        "Implausible compression ratio {:.1}",
         compression_ratio
     );
 

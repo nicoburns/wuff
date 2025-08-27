@@ -148,6 +148,7 @@ impl WoffHeader {
     }
 }
 
+#[derive(Debug)]
 pub struct TableDirectory<T> {
     pub tables: Vec<T>,
     /// Size of the table directory (in the WOFF) in bytes
@@ -219,6 +220,7 @@ impl Woff2TableDirectory {
 }
 
 /// <https://www.w3.org/TR/WOFF2/#table_dir_format>
+#[derive(Debug)]
 pub struct Woff2TableDirectoryEntry {
     /// 4-byte tag (optional)
     pub tag: Tag,
@@ -240,12 +242,7 @@ impl Woff2TableDirectoryEntry {
     /// For 'glyf' and 'loca' tables, transformation version 3 indicates the null transform where the original table data was
     /// passed directly to the Brotli compressor without applying any pre-processing defined in subclause 5.1 and subclause 5.3.
     pub fn is_transformed(&self) -> bool {
-        match self.tag.as_ref() {
-            // For the glyf and loca tables, format 0 indicates transformed
-            b"glyf" | b"loca" => self.format == 0,
-            // For all other tables, format 0 indicates untransformed
-            _ => self.format == 0,
-        }
+        is_transformed(self.tag, self.format)
     }
 
     pub fn data_as_slice<'a>(&self, data: &'a [u8]) -> Result<&'a [u8], WuffErr> {
@@ -260,16 +257,28 @@ impl Woff2TableDirectoryEntry {
         let flags = input.try_get_u8()?;
         let (tag, format) = Self::parse_flags(flags);
 
+        // Note: we only parse the tag field from the input if it is not contained within the flags
+        let tag = match tag {
+            Some(tag) => tag,
+            None => Tag::from_u32(input.try_get_u32()?),
+        };
+
+        let orig_length = input.try_get_variable_128_u32()?;
+
+        // The transformLength field is present in the table directory entry if, and only if, the table has been processed by
+        // a non-null transform prior to Brotli compression. For tables that are not transformed, no transformLength field
+        // is present in the directory entry.
+        let transform_length = match is_transformed(tag, format) {
+            true => Some(input.try_get_variable_128_u32()?),
+            false => None,
+        };
+
         let entry = Self {
-            // Note: we only parse the tag field from the input if it is not contained within the flags
-            tag: match tag {
-                Some(tag) => tag,
-                None => Tag::from_u32(input.try_get_u32()?),
-            },
+            tag,
             format,
-            orig_length: input.try_get_variable_128_u32()?,
+            orig_length,
             woff_offset: 0, // Set in TableDirectory parse function
-            woff_length: input.try_get_variable_128_u32()?,
+            woff_length: transform_length.unwrap_or(orig_length),
         };
 
         // Validate
@@ -294,7 +303,19 @@ impl Woff2TableDirectoryEntry {
     }
 }
 
+fn is_transformed(tag: Tag, format: u8) -> bool {
+    match tag.as_ref() {
+        // For the glyf and loca tables, format 0 indicates transformed
+        b"glyf" | b"loca" => format == 0,
+        // For hmtx format 1 indicates transformed
+        b"hmtx" => format == 1,
+        // No other tables support transformation
+        _ => false,
+    }
+}
+
 /// <https://www.w3.org/TR/WOFF2/#collection_dir_format>
+#[derive(Debug)]
 pub struct CollectionDirectory {
     /// The Version of the TTC Header in the original font.
     pub version: u32,
@@ -402,6 +423,7 @@ impl CollectionDirectory {
 }
 
 /// <https://www.w3.org/TR/WOFF2/#collection_dir_format>
+#[derive(Debug)]
 pub struct CollectionDirectoryEntry {
     /// The "sfnt version" of the font
     pub flavor: Tag,

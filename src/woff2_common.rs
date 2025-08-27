@@ -101,17 +101,17 @@ pub(crate) fn compute_checksum(buf: &[u8]) -> u32 {
     let mut iter = buf.chunks_exact(4);
     for chunk in &mut iter {
         let bytes: [u8; 4] = chunk.try_into().unwrap();
-        checksum += u32::from_be_bytes(bytes);
+        checksum = checksum.wrapping_add(u32::from_be_bytes(bytes));
     }
 
     // Treat sizes not aligned on 4 as if it were padded to 4 with 0's.
-    checksum += match iter.remainder() {
+    checksum = checksum.wrapping_add(match iter.remainder() {
         &[a, b, c] => u32::from_be_bytes([a, b, c, 0]),
         &[a, b] => u32::from_be_bytes([a, b, 0, 0]),
         &[a] => u32::from_be_bytes([a, 0, 0, 0]),
         [] => 0,
         _ => unreachable!("chunk size was 4 so remainder will be a slice of length 3 or smaller"),
-    };
+    });
 
     checksum
 }

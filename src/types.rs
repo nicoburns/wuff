@@ -4,7 +4,7 @@ use std::ops::{Deref, DerefMut};
 use bytes::Buf;
 use font_types::Tag;
 
-use crate::error::{WuffErr, bail, bail_if, bail_with_msg_if, will_overflow};
+use crate::error::{WuffErr, bail, bail_if, bail_with_msg_if, usize_will_overflow};
 use crate::table_tags::KNOWN_TABLE_TAGS;
 use crate::variable_length::BufVariableExt;
 
@@ -189,13 +189,13 @@ impl Woff2TableDirectory {
             table.transform_offset = offset_in_woff as u32;
 
             // Check for for overflow
-            bail_if!(will_overflow(
+            bail_if!(usize_will_overflow(
                 offset_in_woff,
                 table.transform_length as usize
             ));
 
             // Add the length of the table to offset_in_woff to determine the offset of the next table
-            offset_in_woff += table.transform_length as usize as usize;
+            offset_in_woff += table.transform_length as usize;
 
             tables.push(table);
         }

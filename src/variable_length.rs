@@ -18,6 +18,7 @@ use crate::{
 pub trait BufVariableExt {
     fn try_get_variable_255_u16(&mut self) -> Result<u16, WuffErr>;
     fn try_get_variable_128_u32(&mut self) -> Result<u32, WuffErr>;
+    fn try_read_bytes_into(&mut self, n: usize, buf: &mut Vec<u8>) -> Result<(), WuffErr>;
 }
 
 impl<T: bytes::Buf> BufVariableExt for T {
@@ -27,6 +28,13 @@ impl<T: bytes::Buf> BufVariableExt for T {
 
     fn try_get_variable_128_u32(&mut self) -> Result<u32, WuffErr> {
         ReadBase128(self)
+    }
+
+    fn try_read_bytes_into(&mut self, n: usize, buf: &mut Vec<u8>) -> Result<(), WuffErr> {
+        let orig_len = buf.len();
+        buf.resize(orig_len + n, 0);
+        self.try_copy_to_slice(&mut buf[orig_len..])?;
+        Ok(())
     }
 }
 

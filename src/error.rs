@@ -8,7 +8,11 @@ impl From<bytes::TryGetError> for WuffErr {
     }
 }
 
-pub(crate) fn will_overflow(a: usize, b: usize) -> bool {
+pub(crate) fn usize_will_overflow(a: usize, b: usize) -> bool {
+    a.checked_add(b).is_none()
+}
+
+pub(crate) fn u32_will_overflow(a: u32, b: u32) -> bool {
     a.checked_add(b).is_none()
 }
 

@@ -44,7 +44,7 @@ pub fn decompress_woff2(raw_woff_data: &[u8], out: &mut impl BufMut) -> Result<(
 
     let compressed_data = &input[0..(header.total_compressed_size as usize)];
     let mut uncompressed_data: Vec<u8> = Vec::with_capacity(header.total_sfnt_size as usize);
-    let info = brotli_decode(&compressed_data, &mut uncompressed_data); // CHECK: why is output buffer fixed size? Is there a better way to decode?
+    let info = brotli_decode(compressed_data, &mut uncompressed_data); // CHECK: why is output buffer fixed size? Is there a better way to decode?
     bail_if!(!matches!(info.result, BrotliResult::ResultSuccess));
     bail_if!(info.decoded_size != uncompressed_data.len());
 

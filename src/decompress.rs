@@ -82,7 +82,7 @@ pub fn decompress_woff2_with_brotli(
     out.extend_from_slice(&out_header.data);
 
     // Metadata for tables that have been written. Index corresponds to the table's index within the tables Vec
-    let mut table_metadata: Vec<Option<TableMetadata>> = Vec::with_capacity(num_fonts);
+    let mut table_metadata: Vec<Option<TableMetadata>> = vec![None; header.num_tables as usize];
     for i in 0..num_fonts {
         reconstruct_font(
             &decompressed_data,
@@ -207,6 +207,7 @@ fn reconstruct_font(
                 dst_length: table.woff_length,
                 checksum,
             };
+            table_metadata[table_idx as usize] = Some(metadata);
 
             out.extend_from_slice(table_data);
             out.resize(Round4!(out.len()), 0);

@@ -257,7 +257,8 @@ impl GlyfDecoder<'_> {
         let mut triplet_bytes_consumed: usize = 0;
 
         let mut points = Vec::with_capacity(total_n_points as usize);
-        triplet_bytes_consumed += decode_triplet(flags_buf, triplet_buf, &mut points)?;
+        triplet_bytes_consumed +=
+            decode_triplet(&flags_buf[0..flag_size], triplet_buf, &mut points)?;
 
         self.flag_stream.advance(flag_size);
         self.glyph_stream.advance(triplet_bytes_consumed); // FIXME: pass glyph_stream directly to decode_triplet instead?

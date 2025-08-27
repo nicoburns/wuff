@@ -200,8 +200,12 @@ impl GlyfDecoder<'_> {
 
     /// Parse glyph data into `self.glyph_buf`
     fn parse_composite_glyph(&mut self) -> Result<(), WuffErr> {
+        // Create a new iterator over the composite stream when computing the size so that we
+        // we can "rewind" and copy the bytes counted here below.
+        let mut ro_composite_stream = self.composite_stream;
         let (composite_size, have_instructions) =
-            compute_size_of_composite(&mut self.composite_stream)?;
+            compute_size_of_composite(&mut ro_composite_stream)?;
+
         let instruction_size: u16 = if have_instructions {
             self.glyph_stream.try_get_variable_255_u16()?
         } else {

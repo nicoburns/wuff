@@ -2,11 +2,11 @@ WIP port of https://github.com/google/woff2/ to Rust, with a focus on the decode
 
 ## Files
 
-- `woff2` directory contains a copy of https://github.com/google/woff2/
-- `src` directory contains a translation into Rust
+- The `woff2` directory contains a copy of https://github.com/google/woff2/
+- The `old` directory contains the initial translation of the C++ code into Rust
+- The `src` directory contains a rewrite into idiomatic Rust
 
 ## Status
 
-- Most of the decoder is translated and compiles
-- Code is not in a working state
-- Development is not currently active
+- The decoder is translated and compiles
+- The code is not in a working state

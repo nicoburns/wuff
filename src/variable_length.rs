@@ -9,11 +9,7 @@
 use arrayvec::ArrayVec;
 use bytes::Buf;
 
-use crate::{
-    FONT_COMPRESSION_FAILURE,
-    buffer::Buffer,
-    error::{WuffErr, bail, bail_if},
-};
+use crate::error::{WuffErr, bail, bail_if};
 
 pub trait BufVariableExt {
     fn try_get_variable_255_u16(&mut self) -> Result<u16, WuffErr>;

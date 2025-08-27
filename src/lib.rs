@@ -7,101 +7,21 @@
 #![allow(clippy::needless_range_loop)]
 #![allow(clippy::collapsible_if)]
 
-pub mod buffer;
 mod decompress;
 mod error;
-pub mod table_tags;
+mod table_tags;
 mod types;
-pub mod variable_length;
+mod variable_length;
 mod woff;
-pub mod woff2_common;
-pub mod woff2_dec;
 
 pub use decompress::{decompress_woff2, decompress_woff2_with_brotli};
 
-#[inline(always)]
-pub fn PREDICT_FALSE(cond: bool) -> bool {
-    cond
+#[derive(Copy, Clone)]
+pub struct Point {
+    pub x: i32,
+    pub y: i32,
+    pub on_curve: bool,
 }
-
-#[inline(always)]
-pub fn PREDICT_TRUE(cond: bool) -> bool {
-    cond
-}
-
-#[inline(always)]
-pub fn FONT_COMPRESSION_FAILURE() -> bool {
-    false
-}
-
-/// Output interface for the woff2 decoding.
-///
-/// Writes to arbitrary offsets are supported to facilitate updating offset
-/// table and checksums after tables are ready. Reading the current size is
-/// supported so a 'loca' table can be built up while writing glyphs.
-///
-/// By default limits size to kDefaultMaxSize.
-///
-trait WOFF2Out {
-    /// Append n bytes of data from buf.
-    /// Return true if all written, false otherwise.
-    fn Write(&mut self, src: &[u8]) -> bool;
-
-    /// Write n bytes of data from buf at offset.
-    /// Return true if all written, false otherwise.
-    fn WriteAtOffset(&mut self, src: &[u8], offset: usize) -> bool;
-
-    fn Size(&self) -> usize;
-}
-
-struct Woff2MemoryOut;
-impl Woff2MemoryOut {
-    fn new() -> Self {
-        Woff2MemoryOut
-    }
-}
-
-#[inline]
-fn StoreU32(dst: &mut [u8], offset: usize, x: u32) -> usize {
-    dst[offset] = (x >> 24) as u8;
-    dst[offset + 1] = (x >> 16) as u8;
-    dst[offset + 2] = (x >> 8) as u8;
-    dst[offset + 3] = x as u8;
-
-    offset + 4
-}
-
-#[inline]
-fn Store16(dst: &mut [u8], offset: usize, x: i32) -> usize {
-    dst[offset] = (x >> 8) as u8;
-    dst[offset + 1] = x as u8;
-
-    offset + 2
-}
-
-#[inline]
-fn StoreU32_mut(dst: &mut [u8], offset: &mut usize, x: u32) {
-    dst[*offset] = (x >> 24) as u8;
-    dst[*offset + 1] = (x >> 16) as u8;
-    dst[*offset + 2] = (x >> 8) as u8;
-    dst[*offset + 3] = x as u8;
-
-    *offset += 4
-}
-
-#[inline]
-fn Store16_mut(dst: &mut [u8], offset: &mut usize, x: i32) {
-    dst[*offset] = (x >> 8) as u8;
-    dst[*offset + 1] = x as u8;
-
-    *offset += 2
-}
-
-// #[inline]
-// fn StoreBytes(data: &mut[u8], offset: usize, uint8_t* dst) {
-//   memcpy(&dst[*offset], data, len);
-//   *offset += len;
-// }
 
 // Round a value up to the nearest multiple of 4. Don't round the value in the
 // case that rounding up overflows.
@@ -116,3 +36,24 @@ macro_rules! Round4 {
     };
 }
 use Round4;
+
+/// Compute checksum over size bytes of buf
+pub(crate) fn compute_checksum(buf: &[u8]) -> u32 {
+    let mut checksum: u32 = 0;
+    let mut iter = buf.chunks_exact(4);
+    for chunk in &mut iter {
+        let bytes: [u8; 4] = chunk.try_into().unwrap();
+        checksum = checksum.wrapping_add(u32::from_be_bytes(bytes));
+    }
+
+    // Treat sizes not aligned on 4 as if it were padded to 4 with 0's.
+    checksum = checksum.wrapping_add(match iter.remainder() {
+        &[a, b, c] => u32::from_be_bytes([a, b, c, 0]),
+        &[a, b] => u32::from_be_bytes([a, b, 0, 0]),
+        &[a] => u32::from_be_bytes([a, 0, 0, 0]),
+        [] => 0,
+        _ => unreachable!("chunk size was 4 so remainder will be a slice of length 3 or smaller"),
+    });
+
+    checksum
+}

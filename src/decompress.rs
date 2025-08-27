@@ -5,7 +5,7 @@ use bytes::{Buf as _, BufMut};
 use font_types::Tag;
 
 use crate::{
-    Round4,
+    Round4, compute_checksum,
     error::{WuffErr, bail, bail_if, bail_with_msg_if},
     types::{
         CollectionDirectory, CollectionDirectoryEntry, TableDirectory, WOFF2FontInfo, Woff2,
@@ -15,7 +15,6 @@ use crate::{
         glyf_decoder::tranform_glyf_table,
         hmtx_decoder::{decode_hmtx_table, generate_hmtx_table},
     },
-    woff2_common::compute_checksum,
 };
 
 // Over 14k test fonts the max compression ratio seen to date was ~20.

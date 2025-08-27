@@ -1,8 +1,8 @@
 use bytes::{Buf, BufMut};
 
 use crate::{
+    compute_checksum,
     error::{WuffErr, bail_if, bail_with_msg_if},
-    woff2_common::compute_checksum,
 };
 
 /// Data decoded from the WOFF2 hmtx table which can be used to reconstruct

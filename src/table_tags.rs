@@ -8,16 +8,6 @@
 
 use font_types::Tag;
 
-// Tags of popular tables.
-pub const kGlyfTableTag: u32 = 0x676c7966;
-pub const kHeadTableTag: u32 = 0x68656164;
-pub const kLocaTableTag: u32 = 0x6c6f6361;
-pub const kDsigTableTag: u32 = 0x44534947;
-pub const kCffTableTag: u32 = 0x43464620;
-pub const kHmtxTableTag: u32 = 0x686d7478;
-pub const kHheaTableTag: u32 = 0x68686561;
-pub const kMaxpTableTag: u32 = 0x6d617870;
-
 pub static KNOWN_TABLE_TAGS: [Tag; 63] = [
     Tag::new(b"cmap"), // 0
     Tag::new(b"head"), // 1

@@ -44,16 +44,6 @@ mod regular {
         };
     }
     pub(crate) use bail_with_msg_if;
-
-    macro_rules! unwrap_or_bail {
-        ($result: expr) => {
-            match $result {
-                Ok(val) => val,
-                Err(_) => return false,
-            }
-        };
-    }
-    pub(crate) use unwrap_or_bail;
 }
 #[cfg(not(feature = "debug"))]
 pub(crate) use regular::*;
@@ -84,16 +74,6 @@ mod debug {
         };
     }
     pub(crate) use bail_with_msg_if;
-
-    macro_rules! unwrap_or_bail {
-        ($result: expr) => {
-            match $result {
-                Ok(val) => val,
-                Err(_) => panic!(),
-            }
-        };
-    }
-    pub(crate) use unwrap_or_bail;
 }
 #[cfg(feature = "debug")]
 pub(crate) use debug::*;

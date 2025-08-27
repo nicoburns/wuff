@@ -4,10 +4,9 @@ use arrayvec::ArrayVec;
 use bytes::{Buf, BufMut};
 
 use crate::{
-    Round4,
+    Point, Round4, compute_checksum,
     error::{WuffErr, bail_if, bail_with_msg_if, u32_will_overflow, usize_will_overflow},
     variable_length::BufVariableExt as _,
-    woff2_common::{Point, compute_checksum},
 };
 
 // simple glyph flags

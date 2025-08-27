@@ -10,7 +10,6 @@
 mod decompress;
 mod error;
 mod table_tags;
-mod types;
 mod variable_length;
 mod woff;
 

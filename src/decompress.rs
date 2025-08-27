@@ -7,7 +7,7 @@ use font_types::Tag;
 use crate::{
     Round4, compute_checksum,
     error::{WuffErr, bail, bail_if, bail_with_msg_if},
-    types::{
+    woff::headers::{
         CollectionDirectory, CollectionDirectoryEntry, TableDirectory, WOFF2FontInfo, Woff2,
         Woff2TableDirectory, Woff2TableDirectoryEntry, WoffHeader, WoffVersion,
     },

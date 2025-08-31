@@ -1,5 +1,6 @@
 //! Pure Rust WOFF2 decoder
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 #![allow(unused_imports)]
@@ -13,9 +14,10 @@ mod table_tags;
 mod variable_length;
 mod woff;
 
-pub use decompress::{decompress_woff2_with_brotli};
+pub use decompress::{decompress_woff2_with_custom_brotli};
 
 #[cfg(feature = "brotli")]
+#[cfg_attr(docsrs, doc(cfg(feature = "brotli")))]
 pub use decompress::{decompress_woff2};
 
 #[derive(Copy, Clone)]

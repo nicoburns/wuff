@@ -33,12 +33,14 @@ fn decompress_brotli(compressed_data: &[u8], size_hint: usize) -> Result<Vec<u8>
 }
 
 #[cfg(feature = "brotli")]
+/// Decompress a WOFF2 file using the built-in brotli decompressor
 pub fn decompress_woff2(raw_woff_data: &[u8]) -> Result<Vec<u8>, WuffErr> {
-    decompress_woff2_with_brotli(raw_woff_data, &mut decompress_brotli)
+    decompress_woff2_with_custom_brotli(raw_woff_data, &mut decompress_brotli)
 }
 
 #[allow(clippy::type_complexity)]
-pub fn decompress_woff2_with_brotli(
+/// Decompress a WOFF2 file using a custom brotli decompressor passed as a closure
+pub fn decompress_woff2_with_custom_brotli(
     raw_woff_data: &[u8],
     decompress_brotli: &mut dyn FnMut(&[u8], usize) -> Result<Vec<u8>, Box<dyn Error>>,
 ) -> Result<Vec<u8>, WuffErr> {

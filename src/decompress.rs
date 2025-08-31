@@ -96,6 +96,9 @@ pub fn decompress_woff2_with_brotli(
         )?;
     }
 
+    // Update header
+    out[0..out_header.data.len()].copy_from_slice(&out_header.data);
+
     Ok(out)
 }
 

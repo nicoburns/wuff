@@ -314,9 +314,9 @@ fn reconstruct_font(
     // <https://learn.microsoft.com/en-us/typography/opentype/spec/otff#calculating-checksums>
     let checksum_adjustment = 0xB1B0AFBA_u32.wrapping_sub(font_checksum);
     if let Some(head_table_idx) = font_entry.head_idx {
-        let head_table_metdata = &table_metadata[head_table_idx as usize]
+        let head_table_metadata = &table_metadata[head_table_idx as usize]
             .expect("Every table in the font should have metadata at this point");
-        let mut writer = &mut out[head_table_metdata.dst_offset as usize + 8..];
+        let mut writer = &mut out[head_table_metadata.dst_offset as usize + 8..];
         writer.put_u32(checksum_adjustment);
     }
 

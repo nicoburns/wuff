@@ -11,7 +11,7 @@ use crate::variable_length::BufVariableExt;
 pub const WOFF1_SIG: Tag = Tag::new(b"woFF");
 pub const WOFF2_SIG: Tag = Tag::new(b"woF2");
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum WoffVersion {
     Woff1 = 1,
     Woff2 = 2,
@@ -175,7 +175,31 @@ impl TableDirectory {
 }
 
 impl TableDirectory {
-    pub fn parse(input: &mut impl Buf, num_tables: usize) -> Result<Self, WuffErr> {
+    pub fn parse_woff1(input: &mut impl Buf, num_tables: usize) -> Result<Self, WuffErr> {
+        let initial_remaining = input.remaining();
+
+        let mut tables = Vec::with_capacity(num_tables);
+        for _ in 0..num_tables {
+            let table = TableDirectoryEntry::parse_woff1(input)?;
+            // Check for for overflow
+            bail_if!(usize_will_overflow(
+                table.woff_offset as usize,
+                table.woff_length as usize
+            ));
+
+            tables.push(table);
+        }
+
+        let size_of_directory = initial_remaining - input.remaining();
+        bail_if!(size_of_directory != num_tables * 20);
+
+        Ok(Self {
+            tables,
+            size: size_of_directory,
+        })
+    }
+
+    pub fn parse_woff2(input: &mut impl Buf, num_tables: usize) -> Result<Self, WuffErr> {
         let initial_remaining = input.remaining();
 
         // Tables in the CompressedFontData field of the WOFF are stored directly after each other
@@ -187,7 +211,7 @@ impl TableDirectory {
 
         let mut tables = Vec::with_capacity(num_tables);
         for _ in 0..num_tables {
-            let mut table = TableDirectoryEntry::parse(input)?;
+            let mut table = TableDirectoryEntry::parse_woff2(input)?;
             table.woff_offset = offset_in_woff as u32;
 
             // Check for for overflow
@@ -221,16 +245,20 @@ impl TableDirectory {
 /// <https://www.w3.org/TR/WOFF2/#table_dir_format>
 #[derive(Debug)]
 pub struct TableDirectoryEntry {
+    /// The version of the WOFF file that the entry is in.
+    pub version: WoffVersion,
     /// 4-byte tag (optional)
     pub tag: Tag,
-    /// 2 bits representing the format of the table
+    /// 2 bits representing the format of the table (WOFF2 only)
     pub format: u8,
-    /// Length of original table. This may be innacurate in the case of transformed tables.
-    pub orig_length: u32, // uBase128,
     /// Offset of the table within the (decompressed) CompressedFontData field of the WOFF
     pub woff_offset: u32, // Computed
     /// Length of the table within the (decompressed) CompressedFontData field of the WOFF
     pub woff_length: u32, // uBase128,
+    /// Length of original table. This may be innacurate in the case of transformed tables.
+    pub orig_length: u32, // uBase128,
+    /// Checksum of original table (WOFF1 only)
+    pub orig_checksum: u32, // uBase128,
 }
 
 impl TableDirectoryEntry {
@@ -241,7 +269,10 @@ impl TableDirectoryEntry {
     /// For 'glyf' and 'loca' tables, transformation version 3 indicates the null transform where the original table data was
     /// passed directly to the Brotli compressor without applying any pre-processing defined in subclause 5.1 and subclause 5.3.
     pub fn is_transformed(&self) -> bool {
-        is_transformed(self.tag, self.format)
+        match self.version {
+            WoffVersion::Woff1 => self.orig_length != self.woff_length,
+            WoffVersion::Woff2 => is_transformed(self.tag, self.format),
+        }
     }
 
     pub fn data_as_slice<'a>(&self, data: &'a [u8]) -> Result<&'a [u8], WuffErr> {
@@ -252,7 +283,30 @@ impl TableDirectoryEntry {
 }
 
 impl TableDirectoryEntry {
-    pub fn parse(input: &mut impl Buf) -> Result<Self, WuffErr> {
+    pub fn parse_woff1(input: &mut impl Buf) -> Result<Self, WuffErr> {
+        let tag = Tag::from_u32(input.try_get_u32()?);
+        let woff_offset = input.try_get_u32()?;
+        let woff_length = input.try_get_u32()?;
+        let orig_length = input.try_get_u32()?;
+        let orig_checksum = input.try_get_u32()?;
+
+        let entry = Self {
+            version: WoffVersion::Woff1,
+            tag,
+            format: 0, // WOFF2 only
+            woff_offset,
+            woff_length,
+            orig_length,
+            orig_checksum,
+        };
+
+        // Validate
+        // TODO
+
+        Ok(entry)
+    }
+
+    pub fn parse_woff2(input: &mut impl Buf) -> Result<Self, WuffErr> {
         let flags = input.try_get_u8()?;
         let (tag, format) = Self::parse_flags(flags);
 
@@ -273,11 +327,13 @@ impl TableDirectoryEntry {
         };
 
         let entry = Self {
+            version: WoffVersion::Woff2,
             tag,
             format,
-            orig_length,
             woff_offset: 0, // Set in TableDirectory parse function
             woff_length: transform_length.unwrap_or(orig_length),
+            orig_length,
+            orig_checksum: 0, // WOFF1 only
         };
 
         // Validate

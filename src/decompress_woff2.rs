@@ -4,16 +4,17 @@ use bytes::{Buf as _, BufMut};
 use font_types::Tag;
 
 use crate::{
-    Round4, compute_checksum,
+    GLYF, HEAD, HMTX, LOCA, Round4, compute_checksum,
     error::{WuffErr, bail, bail_if, bail_with_msg_if},
-    woff::headers::{
-        CollectionDirectory, CollectionDirectoryEntry, TableDirectory, TableDirectoryEntry,
-        WOFF2FontInfo, Woff2, WoffHeader, WoffVersion,
-    },
     woff::{
         glyf_decoder::tranform_glyf_table,
+        headers::{
+            CollectionDirectory, CollectionDirectoryEntry, TableDirectory, TableDirectoryEntry,
+            WOFF2FontInfo, Woff2, WoffHeader, WoffVersion,
+        },
         hmtx_decoder::{decode_hmtx_table, generate_hmtx_table},
     },
+    write_table_directory_header,
 };
 
 // Over 14k test fonts the max compression ratio seen to date was ~20.
@@ -54,7 +55,7 @@ pub fn decompress_woff2_with_custom_brotli(
     let header = WoffHeader::parse(&mut input)?;
     bail_if!(header.woff_version != WoffVersion::Woff2);
 
-    let table_directory = TableDirectory::parse(&mut input, header.num_tables as usize)?;
+    let table_directory = TableDirectory::parse_woff2(&mut input, header.num_tables as usize)?;
     let mut collection_directory = if header.is_collection() {
         CollectionDirectory::parse(&mut input, &table_directory)?
     } else {
@@ -116,12 +117,6 @@ fn iter_tables_for_font<'a>(
         .iter()
         .map(|table_idx| (*table_idx as usize, &tables[*table_idx as usize]))
 }
-
-const HEAD: Tag = Tag::new(b"head");
-const HHEA: Tag = Tag::new(b"hhea");
-const HMTX: Tag = Tag::new(b"hmtx");
-const GLYF: Tag = Tag::new(b"glyf");
-const LOCA: Tag = Tag::new(b"loca");
 
 // Offset tables assumed to have been written in with 0's initially.
 // WOFF2Header isn't const so we can use [] instead of at() (which upsets FF)
@@ -458,25 +453,6 @@ fn generate_header(
         font_infos,
         checksum,
     }
-}
-
-/// Writes an OpenType table directory
-///
-/// <https://learn.microsoft.com/en-us/typography/opentype/spec/otff#table-directory>
-fn write_table_directory_header(output: &mut impl BufMut, flavor: Tag, num_tables: u16) {
-    let mut max_pow2: u16 = 0;
-    while 1u32 << (max_pow2 + 1) <= (num_tables as u32) {
-        max_pow2 += 1;
-    }
-    let entry_selector = max_pow2;
-    let search_range: u16 = (1u16 << max_pow2) << 4;
-    let range_shift = (((num_tables as u32) << 4) - search_range as u32) as u16;
-
-    output.put_u32(u32::from_be_bytes(flavor.to_be_bytes())); // sfnt version
-    output.put_u16(num_tables); // num_tables
-    output.put_u16(search_range); // searchRange
-    output.put_u16(entry_selector); // entrySelector
-    output.put_u16(range_shift); // rangeShift
 }
 
 // Writes a single Offset Table entry

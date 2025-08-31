@@ -16,7 +16,7 @@ mod woff;
 pub use decompress::{decompress_woff2, decompress_woff2_with_brotli};
 
 #[derive(Copy, Clone)]
-pub struct Point {
+pub(crate) struct Point {
     pub x: i32,
     pub y: i32,
     pub on_curve: bool,

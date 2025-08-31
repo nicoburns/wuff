@@ -47,7 +47,7 @@ checksum = "02a596f5713680923a2080d86de50fe472fb290693cf0f701187a1c8b36996b7"
 
 [[package]]
 name = "wuff"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arrayvec",
  "brotli-decompressor",

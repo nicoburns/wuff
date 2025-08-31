@@ -1,6 +1,5 @@
 use std::{collections::HashMap, error::Error, io::Write};
 
-use brotli_decompressor::{BrotliResult, DecompressorWriter};
 use bytes::{Buf as _, BufMut};
 use font_types::Tag;
 
@@ -21,7 +20,10 @@ use crate::{
 // >100 suggests you wrote a bad uncompressed size.
 const K_MAX_PLAUSIBLE_COMPRESSION_RATIO: f32 = 100.0;
 
+#[cfg(feature = "brotli")]
 fn decompress_brotli(compressed_data: &[u8], size_hint: usize) -> Result<Vec<u8>, Box<dyn Error>> {
+    use brotli_decompressor::{BrotliResult, DecompressorWriter};
+
     let mut output: Vec<u8> = Vec::with_capacity(size_hint);
     let mut decompressor = DecompressorWriter::new(&mut output, 4096);
     decompressor.write_all(compressed_data)?;
@@ -30,6 +32,7 @@ fn decompress_brotli(compressed_data: &[u8], size_hint: usize) -> Result<Vec<u8>
     Ok(output)
 }
 
+#[cfg(feature = "brotli")]
 pub fn decompress_woff2(raw_woff_data: &[u8]) -> Result<Vec<u8>, WuffErr> {
     decompress_woff2_with_brotli(raw_woff_data, &mut decompress_brotli)
 }

@@ -4,11 +4,13 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
+default = ["brotli"]
+brotli = ["dep:brotli-decompressor"]
 font_compression_bin = []
 debug = []
 
 [dependencies]
 arrayvec = "0.7.6"
-brotli-decompressor = "5.0.0"
 bytes = "1.10.1"
 font-types = "0.9.0"
+brotli-decompressor = { version = "5.0.0", optional = true }

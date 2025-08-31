@@ -13,7 +13,10 @@ mod table_tags;
 mod variable_length;
 mod woff;
 
-pub use decompress::{decompress_woff2, decompress_woff2_with_brotli};
+pub use decompress::{decompress_woff2_with_brotli};
+
+#[cfg(feature = "brotli")]
+pub use decompress::{decompress_woff2};
 
 #[derive(Copy, Clone)]
 pub(crate) struct Point {

@@ -359,7 +359,8 @@ impl HeaderData {
     fn update_table_entry(&mut self, font_idx: usize, tag: Tag, metadata: TableMetadata) {
         // Write data
         let table_entry_offset = self.font_infos[font_idx].table_entry_by_tag[&tag];
-        let mut out = &mut self.data[(table_entry_offset + 4)..];
+        
+        let mut out = &mut self.data[(table_entry_offset + 4)..(table_entry_offset + 16)];
         out.put_u32(metadata.checksum);
         out.put_u32(metadata.dst_offset);
         out.put_u32(metadata.dst_length);

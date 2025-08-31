@@ -1,12 +1,11 @@
 # Wuff
 
 Port of https://github.com/google/woff2/ to Rust, with the aim of creating a lightweight pure-rust decoder for WOFF files.
-Currently only WOFF2 is supported. Support for WOFF is planned.
+Both WOFF and WOFF2 formats are supported.
 
 ## Status
 
-The decoder is ported and producing byte-identical files to the woff2 library. However, it has not been extensively tested, and
-may contain bugs.
+The decoder is ported and producing byte-identical files to the woff2 library for every font in https://github.com/google/fonts.
 
 ## Files
 

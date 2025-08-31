@@ -1,4 +1,4 @@
-//! Pure Rust WOFF2 decoder
+//! Pure Rust WOFF and WOFF2 decoder
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(non_snake_case)]

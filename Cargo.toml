@@ -1,12 +1,12 @@
 [package]
 name = "wuff"
-version = "0.1.1"
-description = "Pure-rust WOFF2 font decoding"
+version = "0.2.0"
+description = "Pure-rust WOFF and WOFF2 font decoding"
 authors = ["Nico Burns <nico@nicoburns.com>"]
 license = "MIT"
 repository = "https://github.com/nicoburns/wuff"
 documentation = "https://docs.rs/wuff"
-keywords = ["font", "opentype", "truetype", "woff2"]
+keywords = ["font", "opentype", "truetype", "woff", "woff2"]
 categories = ["parsing"]
 readme = "README.md"
 edition = "2024"

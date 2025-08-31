@@ -19,7 +19,7 @@ pub enum WoffVersion {
 
 pub struct Woff2 {
     pub header: WoffHeader,
-    pub table_directory: Woff2TableDirectory,
+    pub table_directory: TableDirectory,
     pub collection_directory: Option<CollectionDirectory>,
 }
 
@@ -149,33 +149,32 @@ impl WoffHeader {
 }
 
 #[derive(Debug)]
-pub struct TableDirectory<T> {
-    pub tables: Vec<T>,
+pub struct TableDirectory {
+    pub tables: Vec<TableDirectoryEntry>,
     /// Size of the table directory (in the WOFF) in bytes
     pub size: usize,
 }
-pub type Woff2TableDirectory = TableDirectory<Woff2TableDirectoryEntry>;
 
-impl<T> Deref for TableDirectory<T> {
-    type Target = Vec<T>;
+impl Deref for TableDirectory {
+    type Target = Vec<TableDirectoryEntry>;
     fn deref(&self) -> &Self::Target {
         &self.tables
     }
 }
-impl<T> DerefMut for TableDirectory<T> {
+impl DerefMut for TableDirectory {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.tables
     }
 }
 
-impl<T> TableDirectory<T> {
+impl TableDirectory {
     /// Size of the table directory (in the WOFF) in bytes
     pub fn size(&self) -> usize {
         self.size
     }
 }
 
-impl Woff2TableDirectory {
+impl TableDirectory {
     pub fn parse(input: &mut impl Buf, num_tables: usize) -> Result<Self, WuffErr> {
         let initial_remaining = input.remaining();
 
@@ -188,7 +187,7 @@ impl Woff2TableDirectory {
 
         let mut tables = Vec::with_capacity(num_tables);
         for _ in 0..num_tables {
-            let mut table = Woff2TableDirectoryEntry::parse(input)?;
+            let mut table = TableDirectoryEntry::parse(input)?;
             table.woff_offset = offset_in_woff as u32;
 
             // Check for for overflow
@@ -221,7 +220,7 @@ impl Woff2TableDirectory {
 
 /// <https://www.w3.org/TR/WOFF2/#table_dir_format>
 #[derive(Debug)]
-pub struct Woff2TableDirectoryEntry {
+pub struct TableDirectoryEntry {
     /// 4-byte tag (optional)
     pub tag: Tag,
     /// 2 bits representing the format of the table
@@ -234,7 +233,7 @@ pub struct Woff2TableDirectoryEntry {
     pub woff_length: u32, // uBase128,
 }
 
-impl Woff2TableDirectoryEntry {
+impl TableDirectoryEntry {
     /// Whether the table has been transformed
     ///
     /// For all tables in a font, except for 'glyf' and 'loca' tables, transformation version 0 indicates the null transform
@@ -252,7 +251,7 @@ impl Woff2TableDirectoryEntry {
     }
 }
 
-impl Woff2TableDirectoryEntry {
+impl TableDirectoryEntry {
     pub fn parse(input: &mut impl Buf) -> Result<Self, WuffErr> {
         let flags = input.try_get_u8()?;
         let (tag, format) = Self::parse_flags(flags);
@@ -324,10 +323,7 @@ pub struct CollectionDirectory {
 }
 
 impl CollectionDirectory {
-    pub fn parse(
-        input: &mut impl Buf,
-        table_directory: &Woff2TableDirectory,
-    ) -> Result<Self, WuffErr> {
+    pub fn parse(input: &mut impl Buf, table_directory: &TableDirectory) -> Result<Self, WuffErr> {
         let version = input.try_get_u32()?;
         let num_fonts = input.try_get_variable_255_u16()?;
 
@@ -344,7 +340,7 @@ impl CollectionDirectory {
 
     /// Generate a fake `CollectionDirectory` for a single font so that we can share
     /// serialization logic between collection and single fonts.
-    pub fn generate_for_single_font(flavor: Tag, table_directory: &Woff2TableDirectory) -> Self {
+    pub fn generate_for_single_font(flavor: Tag, table_directory: &TableDirectory) -> Self {
         let table_indices: Vec<u16> = (0..(table_directory.len() as u16)).collect();
         let mut head_idx: Option<u16> = None;
         let mut hhea_idx: Option<u16> = None;
@@ -372,7 +368,7 @@ impl CollectionDirectory {
         }
     }
 
-    pub fn sort_tables_within_each_font(&mut self, tables: &Woff2TableDirectory) {
+    pub fn sort_tables_within_each_font(&mut self, tables: &TableDirectory) {
         for font in &mut self.fonts {
             font.table_indices
                 .sort_by_cached_key(|idx| tables[*idx as usize].tag);
@@ -439,7 +435,7 @@ pub struct CollectionDirectoryEntry {
 }
 
 impl CollectionDirectoryEntry {
-    pub fn parse(input: &mut impl Buf, tables: &Woff2TableDirectory) -> Result<Self, WuffErr> {
+    pub fn parse(input: &mut impl Buf, tables: &TableDirectory) -> Result<Self, WuffErr> {
         let num_tables = input.try_get_variable_255_u16()?;
         let flavor = Tag::from_u32(input.try_get_u32()?);
 

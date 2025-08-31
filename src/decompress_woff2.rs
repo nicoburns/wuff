@@ -7,8 +7,8 @@ use crate::{
     Round4, compute_checksum,
     error::{WuffErr, bail, bail_if, bail_with_msg_if},
     woff::headers::{
-        CollectionDirectory, CollectionDirectoryEntry, TableDirectory, WOFF2FontInfo, Woff2,
-        Woff2TableDirectory, Woff2TableDirectoryEntry, WoffHeader, WoffVersion,
+        CollectionDirectory, CollectionDirectoryEntry, TableDirectory, TableDirectoryEntry,
+        WOFF2FontInfo, Woff2, WoffHeader, WoffVersion,
     },
     woff::{
         glyf_decoder::tranform_glyf_table,
@@ -54,7 +54,7 @@ pub fn decompress_woff2_with_custom_brotli(
     let header = WoffHeader::parse(&mut input)?;
     bail_if!(header.woff_version != WoffVersion::Woff2);
 
-    let table_directory = Woff2TableDirectory::parse(&mut input, header.num_tables as usize)?;
+    let table_directory = TableDirectory::parse(&mut input, header.num_tables as usize)?;
     let mut collection_directory = if header.is_collection() {
         CollectionDirectory::parse(&mut input, &table_directory)?
     } else {
@@ -109,8 +109,8 @@ pub fn decompress_woff2_with_custom_brotli(
 
 fn iter_tables_for_font<'a>(
     font_entry: &'a CollectionDirectoryEntry,
-    tables: &'a Woff2TableDirectory,
-) -> impl Iterator<Item = (usize, &'a Woff2TableDirectoryEntry)> {
+    tables: &'a TableDirectory,
+) -> impl Iterator<Item = (usize, &'a TableDirectoryEntry)> {
     font_entry
         .table_indices
         .iter()
@@ -129,7 +129,7 @@ const LOCA: Tag = Tag::new(b"loca");
 fn reconstruct_font(
     woff_data: &[u8],
     header: &WoffHeader,
-    tables: &Woff2TableDirectory,
+    tables: &TableDirectory,
     font_entry: &CollectionDirectoryEntry,
     out_header: &mut HeaderData,
     table_metadata: &mut [Option<TableMetadata>],
@@ -394,7 +394,7 @@ fn compute_header_size(collection_directory: &CollectionDirectory, is_collection
 
 fn generate_header(
     header: &WoffHeader,
-    tables: &Woff2TableDirectory,
+    tables: &TableDirectory,
     collection_directory: &CollectionDirectory,
 ) -> HeaderData {
     let num_fonts = collection_directory.fonts.len();

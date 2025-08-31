@@ -377,13 +377,15 @@ fn write_glyph_points(
             //
             // Note: it is important that we delay setting the GLYF_REPEAT until this point
             // otherwise the "if flag == last_flag" will fail to detect repeats.
-            if repeat_count > 0 {
-                dst.put_u8(last_flag | GLYF_REPEAT);
-                dst.put_u8(repeat_count);
-            }
-            // If the repeat count is 0 then just write the previous flag
-            else {
-                dst.put_u8(last_flag);
+            if last_flag != u8::MAX {
+                if repeat_count > 0 {
+                    dst.put_u8(last_flag | GLYF_REPEAT);
+                    dst.put_u8(repeat_count);
+                }
+                // If the repeat count is 0 then just write the previous flag
+                else {
+                    dst.put_u8(last_flag);
+                }
             }
 
             // Reset the repeat count to 0
@@ -397,12 +399,14 @@ fn write_glyph_points(
     }
 
     // Write final flag
-    if repeat_count > 0 {
-        dst.put_u8(last_flag | GLYF_REPEAT);
-        dst.put_u8(repeat_count);
-    } else {
-        dst.put_u8(last_flag);
-    };
+    if last_flag != u8::MAX {
+        if repeat_count > 0 {
+            dst.put_u8(last_flag | GLYF_REPEAT);
+            dst.put_u8(repeat_count);
+        } else {
+            dst.put_u8(last_flag);
+        };
+    }
 
     // Write x coordinates
     last_x = 0;

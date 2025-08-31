@@ -8,17 +8,17 @@
 #![allow(clippy::needless_range_loop)]
 #![allow(clippy::collapsible_if)]
 
-mod decompress;
+mod decompress_woff2;
 mod error;
 mod table_tags;
 mod variable_length;
 mod woff;
 
-pub use decompress::decompress_woff2_with_custom_brotli;
+pub use decompress_woff2::decompress_woff2_with_custom_brotli;
 
 #[cfg(feature = "brotli")]
 #[cfg_attr(docsrs, doc(cfg(feature = "brotli")))]
-pub use decompress::decompress_woff2;
+pub use decompress_woff2::decompress_woff2;
 
 #[derive(Copy, Clone)]
 pub(crate) struct Point {

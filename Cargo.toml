@@ -1,7 +1,20 @@
 [package]
 name = "wuff"
 version = "0.1.0"
+description = "Pure-rust WOFF2 font decoding"
+authors = ["Nico Burns <nico@nicoburns.com>"]
+license = "MIT"
+repository = "https://github.com/nicoburns/wuff"
+documentation = "https://docs.rs/wuff"
+keywords = ["font", "opentype", "truetype", "woff2"]
+categories = ["parsing"]
+readme = "README.md"
 edition = "2024"
+include = [
+    "Cargo.toml",
+    "README.md",
+    "src/*",
+]
 
 [features]
 default = ["brotli"]

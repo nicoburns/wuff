@@ -18,6 +18,7 @@ mod woff;
 use bytes::BufMut;
 pub use decompress_woff1::decompress_woff1_with_custom_z;
 pub use decompress_woff2::decompress_woff2_with_custom_brotli;
+pub use error::WuffErr;
 
 #[cfg(feature = "z")]
 #[cfg_attr(docsrs, doc(cfg(feature = "z")))]

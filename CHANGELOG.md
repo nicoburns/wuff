@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.2.1
+- Make `WuffErr` type public
+
 ## 0.2.0
 - Added support for WOFF1
 

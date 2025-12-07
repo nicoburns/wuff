@@ -337,7 +337,9 @@ impl TableDirectoryEntry {
         };
 
         // Validate
-        bail_if!(entry.tag.as_ref() == b"loca" && entry.woff_length != 0);
+        if let Some(transform_length) = transform_length {
+            bail_if!(entry.tag.as_ref() == b"loca" && transform_length != 0);
+        }
 
         Ok(entry)
     }

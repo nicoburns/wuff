@@ -5,7 +5,7 @@ use crate::{
     write_table_directory_header,
 };
 use bytes::BufMut as _;
-use std::error::Error;
+use core::error::Error;
 
 #[cfg(feature = "z")]
 fn decompress_z(compressed_data: &[u8], size_hint: usize) -> Result<Vec<u8>, Box<dyn Error>> {

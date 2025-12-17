@@ -3,6 +3,16 @@ pub enum WuffErr {
     GenericError,
 }
 
+impl std::fmt::Display for WuffErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        match self {
+            Self::GenericError => write!(f, "WuffErr::GenericError"),
+        }
+    }
+}
+
+impl core::error::Error for WuffErr {}
+
 impl From<bytes::TryGetError> for WuffErr {
     fn from(_value: bytes::TryGetError) -> Self {
         Self::GenericError

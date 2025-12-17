@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.2.3
+- Implement the `Error` trait for the `WuffErr` type
+
 ## 0.2.2
 - Fix validation of WOFF files that do not have transformed loca/glyf tables. Previously these files were being incorrectly rejected.
 

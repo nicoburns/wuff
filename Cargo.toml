@@ -1,6 +1,6 @@
 [package]
 name = "wuff"
-version = "0.2.2"
+version = "0.2.3"
 description = "Pure-rust WOFF and WOFF2 font decoding"
 authors = ["Nico Burns <nico@nicoburns.com>"]
 license = "MIT"

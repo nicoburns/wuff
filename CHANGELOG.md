@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.2.4
+- Upgrade `font-types` to v0.11
+
 ## 0.2.3
 - Implement the `Error` trait for the `WuffErr` type
 

@@ -6,7 +6,35 @@
 
 //! Font table tags
 
-use font_types::Tag;
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct Tag([u8; 4]);
+
+impl Tag {
+    pub const fn new(bytes: &[u8; 4]) -> Self {
+        Self(*bytes)
+    }
+
+    /// Construct a new `Tag` from a big-endian `u32`
+    pub const fn from_u32(src: u32) -> Self {
+        Self::from_be_bytes(src.to_be_bytes())
+    }
+
+    /// Create a tag from raw big-endian bytes.
+    pub const fn from_be_bytes(bytes: [u8; 4]) -> Self {
+        Self(bytes)
+    }
+
+    /// Return the memory representation of this tag.
+    pub const fn to_be_bytes(self) -> [u8; 4] {
+        self.0
+    }
+}
+
+impl AsRef<[u8]> for Tag {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
 
 pub static KNOWN_TABLE_TAGS: [Tag; 63] = [
     Tag::new(b"cmap"), // 0

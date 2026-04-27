@@ -54,7 +54,7 @@ macro_rules! Round4 {
     };
 }
 use Round4;
-use font_types::Tag;
+use table_tags::Tag;
 
 /// Compute checksum over size bytes of buf
 pub(crate) fn compute_checksum(buf: &[u8]) -> u32 {

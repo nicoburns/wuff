@@ -71,12 +71,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "font-types"
-version = "0.11.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b38ad915f6dadd993ced50848a8291a543bd41ca62bc10740d5e64e2ab4cfd7"
-
-[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -100,5 +94,4 @@ dependencies = [
  "brotli-decompressor",
  "bytes",
  "flate2",
- "font-types",
 ]

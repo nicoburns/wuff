@@ -1,7 +1,7 @@
 use std::{collections::HashMap, error::Error, io::Write};
 
+use crate::Tag;
 use bytes::{Buf as _, BufMut};
-use font_types::Tag;
 
 use crate::{
     GLYF, HEAD, HMTX, LOCA, Round4, compute_checksum,

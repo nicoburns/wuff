@@ -26,7 +26,6 @@ debug = []
 [dependencies]
 arrayvec = "0.7.6"
 bytes = "1.10.1"
-font-types = "0.11.0"
 brotli-decompressor = { version = "5.0.0", optional = true }
 flate2 = { version = "1.1.2", optional = true }
 

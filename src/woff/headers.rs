@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
+use crate::Tag;
 use bytes::Buf;
-use font_types::Tag;
 
 use crate::error::{WuffErr, bail, bail_if, bail_with_msg_if, usize_will_overflow};
 use crate::table_tags::KNOWN_TABLE_TAGS;

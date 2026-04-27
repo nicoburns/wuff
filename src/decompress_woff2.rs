@@ -27,7 +27,7 @@ fn decompress_brotli(compressed_data: &[u8], size_hint: usize) -> Result<Vec<u8>
 
     let mut output: Vec<u8> = Vec::with_capacity(size_hint);
     let mut decompressor = DecompressorWriter::new(&mut output, 4096);
-    decompressor.write_all(compressed_data)?;
+    decompressor.write(compressed_data)?;
     decompressor.close()?;
     drop(decompressor);
     Ok(output)

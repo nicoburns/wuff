@@ -10,6 +10,7 @@ keywords = ["font", "opentype", "truetype", "woff", "woff2"]
 categories = ["parsing"]
 readme = "README.md"
 edition = "2024"
+rust-version = "1.85"
 include = [
     "Cargo.toml",
     "README.md",

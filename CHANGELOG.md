@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.2.5
+- Remove `font-types` dependency
+
 ## 0.2.4
 - Upgrade `font-types` to v0.11
 

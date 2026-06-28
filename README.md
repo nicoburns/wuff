@@ -1,5 +1,9 @@
 # Wuff
 
+[![Crates.io](https://img.shields.io/crates/v/wuff.svg)](https://crates.io/crates/wuff)
+[![Docs](https://img.shields.io/docsrs/wuff/latest)](https://docs.rs/wuff)
+[![Crates.io License](https://img.shields.io/crates/l/wuff)](#license)
+
 A lightweight, pure-Rust decoder for [WOFF](https://www.w3.org/TR/WOFF/) and [WOFF2](https://www.w3.org/TR/WOFF2/) web fonts.
 
 Wuff takes a compressed WOFF or WOFF2 file and decodes it back into a plain

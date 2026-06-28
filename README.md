@@ -22,7 +22,7 @@ byte-identical output to Google's woff2 library for every font in the [google/fo
 - **Bring your own decompressor** — use the bundled backends, or plug in your
   own Brotli/zlib implementation.
 
-## Encoding`
+## Encoding
 
 Wuff currently only includes the decoder and does not yet have a port of the encoder. For encoding, consider:
   - https://github.com/bearcove/woofwoof (Rust bindings to the C++ woff2 library)

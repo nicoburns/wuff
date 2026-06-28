@@ -1,14 +1,72 @@
 # Wuff
 
-Port of https://github.com/google/woff2/ to Rust, with the aim of creating a lightweight pure-rust decoder for WOFF files.
-Both WOFF and WOFF2 formats are supported.
+A lightweight, pure-Rust decoder for [WOFF](https://www.w3.org/TR/WOFF/) and [WOFF2](https://www.w3.org/TR/WOFF2/) web fonts.
 
-## Status
+Wuff takes a compressed WOFF or WOFF2 file and decodes it back into a plain
+[OpenType/TrueType (sfnt)](https://learn.microsoft.com/en-us/typography/opentype/spec/otff)
+font that can be parsed by standard font tooling.
 
-The decoder is ported and producing byte-identical files to the woff2 library for every font in https://github.com/google/fonts.
+It is hand-ported from Google's [woff2](https://github.com/google/woff2) C++ library and has been verified to produce
+byte-identical output to Google's woff2 library for every font in the [google/fonts](https://github.com/google/fonts) repository
 
-## Files
+## Why Wuff?
 
-- The `woff2` directory contains a copy of https://github.com/google/woff2/
-- The `old` directory contains the initial translation of the C++ code into Rust
-- The `src` directory contains a rewrite into idiomatic Rust
+- **Pure Rust** — no C/C++ toolchain or bindings required.
+- **Support both WOFF and WOFF2 formats**
+- **Lightweight** — minimal dependencies, with the compression backends behind
+  optional features.
+- **Bring your own decompressor** — use the bundled backends, or plug in your
+  own Brotli/zlib implementation.
+
+## Encoding`
+
+Wuff currently only includes the decoder and does not yet have a port of the encoder. For encoding, consider:
+  - https://github.com/bearcove/woofwoof (Rust bindings to the C++ woff2 library)
+  - https://github.com/0x6b/ttf2woff2 (AI-assisted port of the C++ woff2 encoder to Rust)
+
+## Usage
+
+Decode a WOFF2 file into an OpenType/TrueType font:
+
+```rust
+let woff2_bytes = std::fs::read("font.woff2")?;
+let otf_bytes = wuff::decompress_woff2(&woff2_bytes)?;
+```
+
+Decode a WOFF (version 1) file:
+
+```rust
+let woff_bytes = std::fs::read("font.woff")?;
+let otf_bytes = wuff::decompress_woff1(&woff_bytes)?;
+```
+
+### Custom decompressors
+
+If you'd rather not pull in the bundled compression crates (for example to share
+a Brotli implementation you already depend on), disable the default features and
+supply your own decompression closure:
+
+```rust
+use wuff::decompress_woff2_with_custom_brotli;
+
+let otf_bytes = decompress_woff2_with_custom_brotli(&woff2_bytes, &mut |input, hint| {
+    // Decompress `input`, optionally using `hint` as a size hint for the output buffer.
+    my_brotli_decompress(input, hint)
+})?;
+```
+
+A matching `decompress_woff1_with_custom_z` is available for WOFF1.
+
+## Repository layout
+
+This repository contains both the published crate and the reference material
+used to develop it:
+
+- `src/` — the published crate: an idiomatic Rust rewrite of the decoder.
+- `woff2/` — a copy of Google's [woff2](https://github.com/google/woff2/) C++
+  library, used as the reference implementation.
+- `old/` — the initial, direct translation of the C++ code into Rust.
+
+## License
+
+Licensed under the [MIT License](./LICENSE).

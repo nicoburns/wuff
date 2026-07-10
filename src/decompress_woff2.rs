@@ -63,6 +63,7 @@ pub fn decompress_woff2_with_custom_brotli(
     //
     // However `raw_woff_data` will still contain the full data for the WOFF.
     let mut input = raw_woff_data;
+    let full_input_len = input.len();
 
     // Parse header, table directory and collection directory
     let header = WoffHeader::parse(&mut input)?;
@@ -74,6 +75,29 @@ pub fn decompress_woff2_with_custom_brotli(
     } else {
         CollectionDirectory::generate_for_single_font(header.flavor, &table_directory)
     };
+
+    // Validate header (blocks do not overlap, and have at most 3 bytes padding between them)
+
+    let compressed_offset = full_input_len - input.len();
+    bail_if!(compressed_offset > u32::MAX as usize);
+
+    let mut src_offset =
+        Round4!(compressed_offset as usize + header.total_compressed_size as usize);
+    bail_if!(src_offset > full_input_len);
+
+    if header.meta_offset != 0 {
+        bail_if!(src_offset != header.meta_offset as usize);
+        src_offset = Round4!(header.meta_offset as usize + header.meta_length as usize);
+        bail_if!(src_offset > u32::MAX as usize);
+    }
+
+    if header.priv_offset != 0 {
+        bail_if!(src_offset != header.priv_offset as usize);
+        src_offset = Round4!(header.priv_offset as usize + header.priv_length as usize);
+        bail_if!(src_offset > u32::MAX as usize);
+    }
+
+    bail_if!(src_offset != Round4!(full_input_len));
 
     // Re-order tables in output (OTSpec) order
     collection_directory.sort_tables_within_each_font(&table_directory);

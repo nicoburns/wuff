@@ -27,7 +27,20 @@ fn decompress_brotli(compressed_data: &[u8], size_hint: usize) -> Result<Vec<u8>
 
     let mut output: Vec<u8> = Vec::with_capacity(size_hint);
     let mut decompressor = DecompressorWriter::new(&mut output, 4096);
-    decompressor.write_all(compressed_data)?;
+
+    // We use `write` rather than `write_all` here (and ignore the case of a partial write) because:
+    //   - The Brotli decompressor always completes in one write call anyway
+    //   - The `write_all` function assumes that we want to write all input into the Write sink,
+    //     but that is not the case here
+    //   - This is because the WOFF2 container format allows the section which contains the encoded Brotli
+    //     stream to contain up to 3 padding bytes such that the section is aligned to a 4-byte boundary.
+    //     Those padding bytes are included in the `totalCompressedSize` which we use to size the input buffer
+    //     but are not actually part of the Brotli stream. So in the case that padding bytes are present, the
+    //     decompression will complete before all bytes are consumed.
+    //   - The write_all function will see that not all bytes are consumed, try to continue pushing bytes into
+    //     the decompressor which causes a panic. The fix it use `write` rather than `write_all`
+    let _ = decompressor.write(compressed_data)?;
+
     decompressor.close()?;
     drop(decompressor);
     Ok(output)

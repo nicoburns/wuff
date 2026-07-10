@@ -84,8 +84,8 @@ pub fn decompress_woff2_with_custom_brotli(
 
     // Decompress data with brotli decoder
     let compressed_data = &input[0..(header.total_compressed_size as usize)];
-    let decompressed_data =
-        decompress_brotli(compressed_data, header.total_sfnt_size as usize).unwrap();
+    let decompressed_data = decompress_brotli(compressed_data, header.total_sfnt_size as usize)
+        .map_err(|_| WuffErr::GenericError)?;
 
     // Validate header (and compression ratio)
     bail_if!(header.total_sfnt_size < 1);

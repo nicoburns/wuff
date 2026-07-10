@@ -39,7 +39,7 @@ pub(crate) fn decode_hmtx_table(
 
     // Should always be true (*regardless* of input data) unless we've made a programming error.
     // so we assert rather than bail.
-    assert!(x_mins.len() == num_glyphs as usize);
+    bail_if!(x_mins.len() != num_glyphs as usize);
 
     // num_glyphs 0 is OK if there is no 'glyf' but cannot then xform 'hmtx'.
     bail_if!(num_hmetrics > num_glyphs);

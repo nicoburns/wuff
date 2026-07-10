@@ -1,8 +1,8 @@
 # Changelog
 
 ## 0.2.6
-- Fix issue where `wuff` would panic on WOFF2 files where the section containing the encoded stream
-  had passing bytes (use `write` rather than `write_all`) (#9)
+- Fix issue where `wuff` would panic on WOFF2 files where the section containing the encoded
+  brotli stream had padding bytes (use `write` rather than `write_all`) (#9)
 
 ## 0.2.5
 - Remove `font-types` dependency

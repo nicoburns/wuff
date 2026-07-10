@@ -1,3 +1,6 @@
+[workspace]
+members = ["wuff-capi"]
+
 [package]
 name = "wuff"
 version = "0.2.6"

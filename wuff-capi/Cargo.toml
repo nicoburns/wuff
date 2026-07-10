@@ -1,0 +1,24 @@
+[package]
+name = "wuff-capi"
+version = "0.1.0"
+description = "C API for the wuff WOFF2 decoder, compatible with the woff2 C library's decoding API"
+authors = ["Nico Burns <nico@nicoburns.com>"]
+license = "MIT"
+repository = "https://github.com/nicoburns/wuff"
+documentation = "https://docs.rs/wuff-capi"
+keywords = ["font", "opentype", "truetype", "woff2", "ffi"]
+categories = ["parsing", "external-ffi-bindings"]
+readme = "README.md"
+edition = "2024"
+rust-version = "1.85"
+links = "woff2"
+include = [
+    "Cargo.toml",
+    "README.md",
+    "build.rs",
+    "src/*",
+    "include/*",
+]
+
+[dependencies]
+wuff = { version = "0.2.6", path = "..", default-features = false, features = ["brotli"] }

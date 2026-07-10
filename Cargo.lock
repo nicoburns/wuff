@@ -95,3 +95,10 @@ dependencies = [
  "bytes",
  "flate2",
 ]
+
+[[package]]
+name = "wuff-capi"
+version = "0.1.0"
+dependencies = [
+ "wuff",
+]

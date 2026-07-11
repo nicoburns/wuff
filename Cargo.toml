@@ -1,5 +1,5 @@
 [workspace]
-members = ["wuff-capi"]
+members = ["wuff-capi", "conformance"]
 
 [package]
 name = "wuff"

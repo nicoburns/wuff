@@ -10,6 +10,9 @@ rust-version = "1.85"
 wuff = { path = "..", default-features = false, features = ["brotli"] }
 wuff-capi = { path = "../wuff-capi" }
 rayon = "1.10"
+ureq = "3.3.0"
+tar = "0.4.46"
+flate2 = "1.1.9"
 
 [build-dependencies]
 cc = "1.2"

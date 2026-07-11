@@ -35,11 +35,12 @@ use wuff_capi as _;
 
 use rayon::prelude::*;
 use std::fmt::Write as _;
+use std::fs;
+use std::io::{self, Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::{fs, io::Write as _};
 
 const GOOGLE_FONTS_URL: &str = "https://github.com/google/fonts/archive/refs/heads/main.tar.gz";
 const FONT_EXTENSIONS: &[&str] = &["ttf", "otf", "ttc"];
@@ -166,6 +167,66 @@ fn ensure_woff2_tools(woff2_dir: &Path) -> (PathBuf, PathBuf) {
     (compress, decompress)
 }
 
+/// Download `url` to `dest`, streaming the response body to disk with a
+/// progress indicator.
+fn download(url: &str, dest: &Path) -> Result<(), String> {
+    const MB: f64 = (1024 * 1024) as f64;
+    let mut response = ureq::get(url).call().map_err(|e| e.to_string())?;
+    // GitHub serves tarballs with chunked transfer encoding, so the total
+    // size (and hence a percentage) is usually unavailable.
+    let total: Option<u64> = response
+        .headers()
+        .get("Content-Length")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse().ok());
+    let mut reader = response.body_mut().as_reader();
+    let mut file = io::BufWriter::new(fs::File::create(dest).map_err(|e| e.to_string())?);
+    let mut buf = [0u8; 64 * 1024];
+    let mut downloaded: u64 = 0;
+    let mut next_report = 0;
+    loop {
+        let read_bytes = reader.read(&mut buf).map_err(|e| e.to_string())?;
+        if read_bytes == 0 {
+            break;
+        }
+        file.write_all(&buf[..read_bytes])
+            .map_err(|e| e.to_string())?;
+        downloaded += read_bytes as u64;
+        // Print a progress update roughly once per MB.
+        if downloaded >= next_report {
+            match total {
+                Some(total) => eprint!(
+                    "\rDownloaded {:.1} / {:.1} MB ({:.0}%)",
+                    downloaded as f64 / MB,
+                    total as f64 / MB,
+                    100.0 * downloaded as f64 / total as f64,
+                ),
+                None => eprint!("\rDownloaded {:.1} MB", downloaded as f64 / MB),
+            }
+            let _ = io::stderr().flush();
+            next_report = downloaded + 1024 * 1024;
+        }
+    }
+    file.flush().map_err(|e| e.to_string())?;
+    eprintln!("\rDownloaded {:.1} MB   ", downloaded as f64 / MB);
+    Ok(())
+}
+
+/// Extract a `.tar.gz` file into `dest`, then return the path of the
+/// archive's single top-level directory.
+fn extract_tarball(tarball: &Path, dest: &Path) -> Result<PathBuf, String> {
+    let file = fs::File::open(tarball).map_err(|e| e.to_string())?;
+    let gz = flate2::read::GzDecoder::new(io::BufReader::new(file));
+    tar::Archive::new(gz)
+        .unpack(dest)
+        .map_err(|e| e.to_string())?;
+    let mut entries = fs::read_dir(dest).map_err(|e| e.to_string())?;
+    match (entries.next(), entries.next()) {
+        (Some(entry), None) => Ok(entry.map_err(|e| e.to_string())?.path()),
+        _ => Err("expected exactly one top-level directory in the tarball".to_string()),
+    }
+}
+
 /// Download (if needed) and extract (if needed) the google/fonts repository.
 /// Returns the directory containing the extracted font tree.
 fn ensure_fonts(data_dir: &Path, refresh: bool) -> PathBuf {
@@ -179,34 +240,27 @@ fn ensure_fonts(data_dir: &Path, refresh: bool) -> PathBuf {
     if !tarball.is_file() || refresh {
         eprintln!("Downloading {GOOGLE_FONTS_URL} (~1GB, this may take a while)...");
         let partial = data_dir.join("google-fonts.tar.gz.partial");
-        run_command(
-            Command::new("curl")
-                .arg("--location")
-                .arg("--fail")
-                .arg("--progress-bar")
-                .arg("--output")
-                .arg(&partial)
-                .arg(GOOGLE_FONTS_URL),
-            "download of the google/fonts tarball with curl",
-        );
+        if let Err(e) = download(GOOGLE_FONTS_URL, &partial) {
+            fatal(&format!("failed to download the google/fonts tarball: {e}"));
+        }
         fs::rename(&partial, &tarball).expect("failed to move downloaded tarball into place");
     }
 
-    eprintln!("Extracting {}...", tarball.display());
+    eprintln!(
+        "Extracting {} (this may take a minute)...",
+        tarball.display()
+    );
     let extracting = data_dir.join("google-fonts.extracting");
     let _ = fs::remove_dir_all(&extracting);
     let _ = fs::remove_dir_all(&fonts_dir);
     fs::create_dir_all(&extracting).expect("failed to create extraction dir");
-    run_command(
-        Command::new("tar")
-            .arg("-xzf")
-            .arg(&tarball)
-            .arg("-C")
-            .arg(&extracting)
-            .arg("--strip-components=1"),
-        "extraction of the google/fonts tarball with tar",
-    );
-    fs::rename(&extracting, &fonts_dir).expect("failed to move extracted fonts into place");
+    // The tarball contains a single top-level directory (fonts-<branch>);
+    // move it into place and discard the wrapper.
+    match extract_tarball(&tarball, &extracting) {
+        Ok(root) => fs::rename(&root, &fonts_dir).expect("failed to move extracted fonts"),
+        Err(e) => fatal(&format!("failed to extract the google/fonts tarball: {e}")),
+    }
+    let _ = fs::remove_dir_all(&extracting);
     // The tarball is no longer needed once extracted; only the encoded WOFF2
     // files are kept long-term.
     let _ = fs::remove_file(&tarball);

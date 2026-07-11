@@ -13,6 +13,12 @@
 //! driven from the cache alone. Pass `--refresh-fonts` to re-download the
 //! sources and rebuild the cache from scratch.
 //!
+//! In addition, WOFF2 files from the wpt (web-platform-tests) WOFF2
+//! conformance suite, committed to the repository under `conformance/wpt/`,
+//! are decoded as-is. As that suite contains deliberately invalid files,
+//! consistent rejection by all three decoders is an acceptable outcome for
+//! these inputs (reported as "pass (wpt reject)").
+//!
 //! Usage:
 //!
 //! ```text
@@ -242,17 +248,17 @@ fn discover_encoded_fonts(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Recursively find all font files under `dir`, returned as paths relative
-/// to `root`.
-fn discover_fonts(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) {
+/// Recursively find all files under `dir` with one of the given (lowercase)
+/// extensions, returned as paths relative to `root`.
+fn discover_files(root: &Path, dir: &Path, extensions: &[&str], out: &mut Vec<PathBuf>) {
     for entry in fs::read_dir(dir).expect("failed to read fonts dir") {
         let path = entry.expect("failed to read dir entry").path();
         if path.is_dir() {
-            discover_fonts(root, &path, out);
+            discover_files(root, &path, extensions, out);
         } else if path
             .extension()
             .and_then(|e| e.to_str())
-            .is_some_and(|e| FONT_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
+            .is_some_and(|e| extensions.contains(&e.to_ascii_lowercase().as_str()))
         {
             out.push(path.strip_prefix(root).unwrap().to_path_buf());
         }
@@ -281,7 +287,7 @@ fn encode_font(compress: &Path, src: &Path, dst: &Path, scratch: &Path) -> Resul
         .arg(&input)
         .output()
         .map_err(|e| e.to_string())?;
-    let result = if output.status.success() {
+    if output.status.success() {
         fs::create_dir_all(dst.parent().unwrap()).map_err(|e| e.to_string())?;
         fs::rename(scratch.join("input.woff2"), dst).map_err(|e| e.to_string())?;
         Ok(())
@@ -292,28 +298,25 @@ fn encode_font(compress: &Path, src: &Path, dst: &Path, scratch: &Path) -> Resul
         }
         let _ = fs::write(&fail_marker, &msg);
         Err(msg)
-    };
-    let _ = fs::remove_dir_all(scratch);
-    result
+    }
 }
 
 /// Decode a WOFF2 file with the C++ reference decoder binary.
-fn cpp_decode(decompress: &Path, woff2_path: &Path) -> Result<Vec<u8>, String> {
-    // woff2_decompress truncates at the last '.' and appends ".ttf", so
-    // "Foo.ttf.woff2" produces "Foo.ttf.ttf" (unique within the cache dir).
-    let path_str = woff2_path.to_str().expect("non-UTF8 path");
-    let out_path = format!("{}.ttf", path_str.strip_suffix(".woff2").unwrap());
+fn cpp_decode(decompress: &Path, woff2_path: &Path, scratch: &Path) -> Result<Vec<u8>, String> {
+    // woff2_decompress writes its output next to its input (truncating at
+    // the last '.' and appending ".ttf"), so decode a copy in a private
+    // scratch dir rather than writing alongside the input file.
+    fs::create_dir_all(scratch).map_err(|e| e.to_string())?;
+    let input = scratch.join("decode_input.woff2");
+    fs::copy(woff2_path, &input).map_err(|e| e.to_string())?;
     let output = Command::new(decompress)
-        .arg(woff2_path)
+        .arg(&input)
         .output()
         .map_err(|e| e.to_string())?;
     if !output.status.success() {
-        let _ = fs::remove_file(&out_path);
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
-    let decoded = fs::read(&out_path).map_err(|e| e.to_string())?;
-    let _ = fs::remove_file(&out_path);
-    Ok(decoded)
+    fs::read(scratch.join("decode_input.ttf")).map_err(|e| e.to_string())
 }
 
 /// Parse the sfnt table directory (handling TTC collections), returning
@@ -420,6 +423,10 @@ enum Outcome {
     /// wuff and wuff-capi agree; the C++ CLI could not decode the font only
     /// because its output exceeds the CLI's hardcoded 30MB cap.
     PassCppSizeCapped,
+    /// All three decoders rejected an input for which rejection is an
+    /// acceptable outcome (the committed wpt suite contains deliberately
+    /// invalid WOFF2 files).
+    PassConsistentReject,
     /// All three decoders rejected the font (still suspicious for
     /// encoder-produced input, but at least consistent).
     ConsistentReject {
@@ -434,25 +441,34 @@ enum Outcome {
     Mismatch(String),
 }
 
-fn test_font(
-    compress: &Path,
-    decompress: &Path,
-    fonts_dir: &Path,
-    encoded_dir: &Path,
-    scratch: &Path,
-    rel: &Path,
-) -> Outcome {
-    let src = fonts_dir.join(rel);
-    let encoded = encoded_dir.join(format!("{}.woff2", rel.display()));
-    if let Err(msg) = encode_font(compress, &src, &encoded, scratch) {
+/// A single WOFF2 decoding test.
+struct TestCase {
+    /// Display name, also used for sorting, filtering and reporting.
+    name: PathBuf,
+    /// Source font to encode with woff2_compress (google/fonts corpus), or
+    /// None when `woff2` is a ready-made WOFF2 file.
+    src: Option<PathBuf>,
+    /// The WOFF2 file to decode: the encoded-cache path for google/fonts,
+    /// or the committed file itself for the wpt suite.
+    woff2: PathBuf,
+    /// Whether consistent rejection by all three decoders is an acceptable
+    /// outcome (true for the wpt suite, which contains deliberately
+    /// invalid WOFF2 files; false for encoder-produced input).
+    reject_ok: bool,
+}
+
+fn test_font(compress: &Path, decompress: &Path, case: &TestCase, scratch: &Path) -> Outcome {
+    if let Some(src) = &case.src
+        && let Err(msg) = encode_font(compress, src, &case.woff2, scratch)
+    {
         return Outcome::EncodeFail(msg);
     }
-    let woff2_bytes = match fs::read(&encoded) {
+    let woff2_bytes = match fs::read(&case.woff2) {
         Ok(bytes) => bytes,
         Err(e) => return Outcome::EncodeFail(format!("failed to read encoded font: {e}")),
     };
 
-    let cpp = cpp_decode(decompress, &encoded);
+    let cpp = cpp_decode(decompress, &case.woff2, scratch);
     let wuff = wuff::decompress_woff2(&woff2_bytes);
     let capi = capi::decode(&woff2_bytes);
 
@@ -466,6 +482,7 @@ fn test_font(
                 Outcome::Pass
             }
         }
+        (Err(_), Err(_), None) if case.reject_ok => Outcome::PassConsistentReject,
         (Err(cpp_err), Err(wuff_err), None) => Outcome::ConsistentReject {
             cpp_err: cpp_err.clone(),
             wuff_err: wuff_err.to_string(),
@@ -525,7 +542,7 @@ fn main() {
             let _ = fs::remove_dir_all(&encoded_dir);
         }
         let fonts_dir = ensure_fonts(&cfg.data_dir, cfg.refresh_fonts);
-        discover_fonts(&fonts_dir, &fonts_dir, &mut fonts);
+        discover_files(&fonts_dir, &fonts_dir, FONT_EXTENSIONS, &mut fonts);
     } else {
         eprintln!(
             "Using encoded font cache at {} (pass --refresh-fonts to re-download sources)",
@@ -533,19 +550,44 @@ fn main() {
         );
         discover_encoded_fonts(&encoded_dir, &encoded_dir, &mut fonts);
     }
-    fonts.sort();
+
+    let mut cases: Vec<TestCase> = fonts
+        .into_iter()
+        .map(|rel| TestCase {
+            src: Some(fonts_dir.join(&rel)),
+            woff2: encoded_dir.join(format!("{}.woff2", rel.display())),
+            name: rel,
+            reject_ok: false,
+        })
+        .collect();
+
+    // Ready-made WOFF2 files from the wpt WOFF2 conformance suite, committed
+    // to the repository. These are decoded as-is, with no encoding step.
+    let wpt_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("wpt");
+    if wpt_dir.is_dir() {
+        let mut wpt_files = Vec::new();
+        discover_files(&wpt_dir, &wpt_dir, &["woff2"], &mut wpt_files);
+        cases.extend(wpt_files.into_iter().map(|rel| TestCase {
+            name: PathBuf::from("wpt").join(&rel),
+            woff2: wpt_dir.join(&rel),
+            src: None,
+            reject_ok: true,
+        }));
+    }
+
+    cases.sort_by(|a, b| a.name.cmp(&b.name));
     if !cfg.filters.is_empty() {
-        fonts.retain(|f| {
-            let path = f.to_string_lossy();
+        cases.retain(|case| {
+            let path = case.name.to_string_lossy();
             cfg.filters
                 .iter()
                 .any(|filter| path.contains(filter.as_str()))
         });
     }
     if let Some(limit) = cfg.limit {
-        fonts.truncate(limit);
+        cases.truncate(limit);
     }
-    let total = fonts.len();
+    let total = cases.len();
     eprintln!("Testing {total} fonts...");
 
     let done = AtomicUsize::new(0);
@@ -553,23 +595,20 @@ fn main() {
     let scratch_id = AtomicUsize::new(0);
     let failures: Mutex<Vec<(PathBuf, Outcome)>> = Mutex::new(Vec::new());
 
-    fonts.par_iter().for_each(|rel| {
+    cases.par_iter().for_each(|case| {
         let scratch = scratch_root.join(scratch_id.fetch_add(1, Ordering::Relaxed).to_string());
-        let outcome = test_font(
-            &compress,
-            &decompress,
-            &fonts_dir,
-            &encoded_dir,
-            &scratch,
-            rel,
-        );
+        let outcome = test_font(&compress, &decompress, case, &scratch);
+        let _ = fs::remove_dir_all(&scratch);
         if !matches!(outcome, Outcome::Pass) {
-            if !matches!(outcome, Outcome::PassCppSizeCapped) {
+            if !matches!(
+                outcome,
+                Outcome::PassCppSizeCapped | Outcome::PassConsistentReject
+            ) {
                 failed.fetch_add(1, Ordering::Relaxed);
                 let (category, details) = describe_outcome(&outcome);
-                eprintln!("\r{}: {}: {}", category, rel.display(), details);
+                eprintln!("\r{}: {}: {}", category, case.name.display(), details);
             }
-            failures.lock().unwrap().push((rel.clone(), outcome));
+            failures.lock().unwrap().push((case.name.clone(), outcome));
         }
         let done = done.fetch_add(1, Ordering::Relaxed) + 1;
         eprint!(
@@ -606,7 +645,7 @@ fn main() {
     failures.sort_by(|a, b| a.0.cmp(&b.0));
 
     // Summarise and write a report file.
-    let mut counts = [0usize; 6];
+    let mut counts = [0usize; 7];
     let mut report = String::new();
     for (rel, outcome) in &failures {
         let (category, details) = describe_outcome(outcome);
@@ -622,12 +661,14 @@ fn main() {
         disagreement,
         mismatch,
         cpp_size_capped,
+        wpt_reject,
         _,
     ] = counts;
     let pass = total - failures.len();
     println!("\nResults:");
     println!("  pass:                    {pass}");
     println!("  pass (cpp size-capped):  {cpp_size_capped}");
+    println!("  pass (wpt reject):       {wpt_reject}");
     println!("  mismatch:                {mismatch}");
     println!("  disagreement:            {disagreement}");
     println!("  consistent reject:       {consistent_reject}");
@@ -649,7 +690,8 @@ fn category_index(outcome: &Outcome) -> usize {
         Outcome::Disagreement(_) => 2,
         Outcome::Mismatch(_) => 3,
         Outcome::PassCppSizeCapped => 4,
-        Outcome::Pass => 5,
+        Outcome::PassConsistentReject => 5,
+        Outcome::Pass => 6,
     }
 }
 
@@ -659,6 +701,10 @@ fn describe_outcome(outcome: &Outcome) -> (&'static str, String) {
         Outcome::PassCppSizeCapped => (
             "PASS (CPP SIZE-CAPPED)",
             "wuff and capi agree; cpp CLI rejects >30MB output".to_string(),
+        ),
+        Outcome::PassConsistentReject => (
+            "PASS (WPT REJECT)",
+            "all three decoders reject this (possibly deliberately invalid) input".to_string(),
         ),
         Outcome::EncodeFail(msg) => ("ENCODE FAIL", msg.clone()),
         Outcome::ConsistentReject { cpp_err, wuff_err } => (

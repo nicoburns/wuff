@@ -111,6 +111,11 @@ pub fn decompress_woff2_with_custom_brotli(
     let decompressed_data = decompress_brotli(compressed_data, header.total_sfnt_size as usize)
         .map_err(|_| WuffErr::GenericError)?;
 
+    // The decompressed data block must be exactly the size of the tables it contains
+    // (tables are stored consecutively with no padding or extraneous data).
+    // <https://www.w3.org/TR/WOFF2/#conform-mustRejectExtraData>
+    bail_if!(decompressed_data.len() != table_directory.uncompressed_size);
+
     // Validate header (and compression ratio)
     bail_if!(header.total_sfnt_size < 1);
     bail_with_msg_if!(
@@ -188,9 +193,9 @@ fn reconstruct_font(
     }
 
     let mut font_checksum: u32 = if header.is_collection() {
-        out_header.checksum
-    } else {
         out_header.font_infos[font_idx].header_checksum
+    } else {
+        out_header.checksum
     };
 
     // Read and store "num_hmetrics" from "hhea" table and then used to reconstruct "hmtx"
@@ -263,6 +268,14 @@ fn reconstruct_font(
             let raw_glyf_table_data = table.data_as_slice(woff_data)?;
             let glyf_and_loca_data = tranform_glyf_table(raw_glyf_table_data)?;
 
+            // The origLength of the loca table declared in the table directory must exactly
+            // match the size of the reconstructed loca table.
+            // <https://www.w3.org/TR/WOFF2/#conform-mustRejectLoca>
+            bail_with_msg_if!(
+                tables[loca_idx].orig_length as usize != glyf_and_loca_data.loca_table.len(),
+                "loca table origLength does not match reconstructed loca size"
+            );
+
             // Store num_glyphs and x_mins
             num_glyphs = Some(glyf_and_loca_data.num_glyphs);
             x_mins = Some(glyf_and_loca_data.x_mins);
@@ -313,10 +326,13 @@ fn reconstruct_font(
             let dest_offset = out.len();
             out.extend_from_slice(&hmtx_table);
             out.resize(Round4!(out.len()), 0);
+            // Note: like the reference implementation, we record the origLength declared in
+            // the WOFF2 table directory (rather than the size of the reconstructed table)
+            // in the output table directory entry. The two may legitimately differ.
             let hmtx_metadata = TableMetadata {
                 checksum,
                 dst_offset: dest_offset as u32,
-                dst_length: hmtx_table.len() as u32,
+                dst_length: table.orig_length,
             };
             table_metadata[table_idx] = Some(hmtx_metadata);
 
@@ -332,8 +348,9 @@ fn reconstruct_font(
         out_header.update_table_entry(font_idx, table.tag, metadata);
         font_checksum = font_checksum.wrapping_add(metadata.header_checksum_contribution());
 
-        // CHECK: do we still need this check in Rust (may be covered by bounds checks)
-        // bail_if!((table.dst_offset + table.dst_length) as usize > out.Size());
+        // The table (as recorded in the output table directory) must not extend past the end
+        // of the data written (including padding) so far.
+        bail_if!(metadata.dst_offset as u64 + metadata.dst_length as u64 > out.len() as u64);
     }
 
     // Update 'head' checkSumAdjustment. We already set it to 0 and summed font.

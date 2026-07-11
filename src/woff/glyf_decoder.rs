@@ -139,17 +139,19 @@ impl GlyfDecoder<'_> {
         let mut glyf_checksum: u32 = 0;
         let mut glyf_table: Vec<u8> = Vec::with_capacity(self.num_glyphs as usize * 12);
         let mut loca_values: Vec<u32> = Vec::with_capacity(self.num_glyphs as usize + 1);
-        let mut x_mins: Vec<i16> = Vec::with_capacity(self.num_glyphs as usize);
+        // x_mins is indexed by glyph ID. Only simple glyphs have their x_min recorded;
+        // entries for composite and empty glyphs are left as 0.
+        let mut x_mins: Vec<i16> = vec![0; self.num_glyphs as usize];
 
         // Iterate over each glyph
         for i in 0..(self.num_glyphs as usize) {
             loca_values.push(glyf_table.len() as u32);
 
-            let n_contours: i16 = self.n_contour_stream.try_get_i16()?;
+            let n_contours: u16 = self.n_contour_stream.try_get_u16()?;
             let glyph_has_bbox = (self.bbox_bitmap[i >> 3] & (0x80 >> (i & 7))) != 0;
 
             self.glyph_buf.clear();
-            if n_contours == -1 {
+            if n_contours == 0xFFFF {
                 // composite glyphs must have an explicit bbox
                 bail_if!(!glyph_has_bbox);
                 self.parse_composite_glyph()?;
@@ -175,9 +177,11 @@ impl GlyfDecoder<'_> {
 
             // Read the x_min of the glyph in case we nede it to reconstruct 'hmtx'
             // The x_min value an i16 stored as bytes 2-4 in the glyph header.
+            // Both simple and composite glyphs have a bbox in their header; only
+            // empty glyphs (n_contours == 0) have no header at all.
             if n_contours > 0 {
                 let x_min = i16::from_be_bytes(self.glyph_buf[2..4].try_into().unwrap());
-                x_mins.push(x_min);
+                x_mins[i] = x_min;
             }
         }
 
@@ -237,7 +241,7 @@ impl GlyfDecoder<'_> {
 
     fn parse_simple_glyph(
         &mut self,
-        n_contours: i16,
+        n_contours: u16,
         glyph_has_bbox: bool,
         has_overlap_bit: bool,
     ) -> Result<(), WuffErr> {

@@ -1,3 +1,4 @@
+use alloc::{boxed::Box, vec, vec::Vec};
 use core::error::Error;
 
 use crate::Tag;
@@ -20,29 +21,6 @@ use crate::{
 // Over 14k test fonts the max compression ratio seen to date was ~20.
 // >100 suggests you wrote a bad uncompressed size.
 const K_MAX_PLAUSIBLE_COMPRESSION_RATIO: f32 = 100.0;
-
-#[cfg(feature = "brotli")]
-fn decompress_brotli(
-    compressed_data: &[u8],
-    expected_size: usize,
-) -> Result<Vec<u8>, Box<dyn Error>> {
-    use brotli_decompressor::{BrotliResult, brotli_decode};
-
-    let mut output = vec![0u8; expected_size];
-    let info = brotli_decode(compressed_data, &mut output);
-
-    if !matches!(info.result, BrotliResult::ResultSuccess) || info.decoded_size != expected_size {
-        return Err(Box::new(WuffErr::GenericError));
-    }
-
-    Ok(output)
-}
-
-#[cfg(feature = "brotli")]
-/// Decompress a WOFF2 file using the built-in brotli decompressor
-pub fn decompress_woff2(raw_woff_data: &[u8]) -> Result<Vec<u8>, WuffErr> {
-    decompress_woff2_with_custom_brotli(raw_woff_data, &mut decompress_brotli)
-}
 
 #[allow(clippy::type_complexity)]
 /// Decompress a WOFF2 file using a custom brotli decompressor passed as a closure

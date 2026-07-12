@@ -1,3 +1,5 @@
+use alloc::{boxed::Box, vec::Vec};
+
 use crate::{
     Round4, compute_checksum,
     error::{WuffErr, bail_if},

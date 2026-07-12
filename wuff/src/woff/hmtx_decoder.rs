@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use bytes::{Buf, BufMut};
 
 use crate::error::{WuffErr, bail_if, bail_with_msg_if};

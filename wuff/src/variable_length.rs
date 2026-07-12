@@ -6,6 +6,8 @@
 
 //! Helper functions for woff2 variable length types: 255UInt16 and UIntBase128
 
+use alloc::vec::Vec;
+
 use arrayvec::ArrayVec;
 use bytes::Buf;
 

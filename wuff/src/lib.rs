@@ -1,4 +1,5 @@
 //! Pure Rust WOFF and WOFF2 decoder
+#![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
@@ -7,6 +8,8 @@
 
 extern crate alloc;
 
+#[cfg(feature = "brotli")]
+mod brotli;
 mod decompress_woff1;
 mod decompress_woff2;
 mod error;
@@ -25,7 +28,7 @@ pub use decompress_woff1::decompress_woff1;
 
 #[cfg(feature = "brotli")]
 #[cfg_attr(docsrs, doc(cfg(feature = "brotli")))]
-pub use decompress_woff2::decompress_woff2;
+pub use brotli::decompress_woff2;
 
 const HEAD: Tag = Tag::new(b"head");
 const HHEA: Tag = Tag::new(b"hhea");

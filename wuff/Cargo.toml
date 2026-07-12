@@ -17,6 +17,12 @@ include = [
     "src/*",
 ]
 
+# The `wuff` CLI is a std-only convenience tool that decodes both WOFF1 and
+# WOFF2, so it needs both built-in decompressors.
+[[bin]]
+name = "wuff"
+required-features = ["brotli", "z"]
+
 [features]
 default = ["brotli", "z"]
 brotli = ["dep:brotli-decompressor"]
@@ -25,9 +31,14 @@ font_compression_bin = []
 debug = []
 
 [dependencies]
-arrayvec = "0.7.6"
-bytes = "1.10.1"
-brotli-decompressor = { version = "5.0.0", optional = true }
+arrayvec = { version = "0.7.6", default-features = false }
+bytes = { version = "1.10.1", default-features = false }
+# `brotli` is no_std-compatible: we drive `brotli-decompressor` with our own
+# `alloc`-backed allocator, so its `std` default feature is disabled.
+brotli-decompressor = { version = "5.0.0", optional = true, default-features = false }
+# `flate2` (the `z` feature) is std-only, so this feature cannot be built for
+# no_std targets. no_std users can supply their own decompressor via
+# `decompress_woff1_with_custom_z`.
 flate2 = { version = "1.1.2", optional = true }
 
 [package.metadata.docs.rs]

@@ -101,7 +101,6 @@ used to develop it:
 - `conformance/` - the conformance test harness described above.
 - `woff2/` - a copy of Google's [woff2](https://github.com/google/woff2/) C++
   library, used as the reference implementation.
-- `old/` - the initial, direct translation of the C++ code into Rust.
 
 ## License
 

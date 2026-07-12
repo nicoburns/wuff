@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.7
+
+- The `wuff` crate is now `no_std` compatible
+- A `wuff-capi` crate has been added exposing a C API.
+  Additionally header files are provided that provide an API that is drop-in compatible with the C++ woff2 library's API.
+
+A number of small bugs have been fixed:
+
+- Return an error rather than panicking on malformed WOFF2 inputs (decompression failures, unexpected decompressed data sizes, and other malformed data)
+- Bound WOFF2 decompression by the table-directory size rather than the untrusted `totalSfntSize`
+- Reject fonts where the reconstructed `loca` or `hmtx` tables don't match the original size
+- Reject WOFF files with overlapping blocks, or with more than 3 bytes of padding between blocks
+- Fix inverted TTC and TTF header checksum
+- Fix forwards compatibility with future transform formats
+- Only reject a non-zero reserved field for WOFF1 files
+
+
 ## 0.2.6
 - Fix issue where `wuff` would panic on WOFF2 files where the section containing the encoded
   brotli stream had padding bytes (use `write` rather than `write_all`) (#9)

@@ -4,7 +4,6 @@
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 #![allow(dead_code)]
-#![allow(clippy::needless_range_loop)]
 #![allow(clippy::collapsible_if)]
 
 mod decompress_woff1;

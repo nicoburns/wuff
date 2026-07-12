@@ -520,7 +520,7 @@ impl CollectionDirectoryEntry {
         let mut table_indices = Vec::with_capacity(num_tables as usize);
         for _ in 0..num_tables {
             let table_index = input.try_get_variable_255_u16()?;
-            bail_if!(table_index as usize > tables.len());
+            bail_if!(table_index as usize >= tables.len());
 
             match tables[table_index as usize].tag.as_ref() {
                 b"head" => head_idx = Some(table_index),

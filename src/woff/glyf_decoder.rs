@@ -111,8 +111,8 @@ impl GlyfDecoder<'_> {
         let mut overlap_bitmap: Option<&[u8]> = None;
         if has_overlap_bitmap {
             let overlap_bitmap_length = (num_glyphs as usize + 7) >> 3;
-            overlap_bitmap = Some(&data[offset..(offset + (overlap_bitmap_length))]);
             bail_if!(overlap_bitmap_length > data.len() - offset);
+            overlap_bitmap = Some(&data[offset..(offset + (overlap_bitmap_length))]);
         }
 
         // Scratch buffer to decode glyphs int.
@@ -488,6 +488,7 @@ fn compute_size_of_composite(composite_stream: &mut impl Buf) -> Result<(usize, 
         } else if flags & FLAG_WE_HAVE_A_TWO_BY_TWO != 0 {
             arg_size += 8;
         }
+        bail_if!(composite_stream.remaining() < arg_size);
         composite_stream.advance(arg_size);
 
         // 2 bytes for the flags + arg_size

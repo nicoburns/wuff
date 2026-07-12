@@ -311,9 +311,9 @@ fn reconstruct_font(
         else if table.tag == HMTX {
             // Tables are sorted so all the info we need has been gathered.
             // TODO: better error_handling
-            let num_glyphs = num_glyphs.unwrap();
-            let num_hmetrics = num_hmetrics.unwrap();
-            let x_mins = x_mins.as_ref().unwrap();
+            let num_glyphs = num_glyphs.ok_or(WuffErr::GenericError)?;
+            let num_hmetrics = num_hmetrics.ok_or(WuffErr::GenericError)?;
+            let x_mins = x_mins.as_ref().ok_or(WuffErr::GenericError)?;
 
             // Generate reconstructed hmtx table
             let mut raw_hmtx_table_data = table.data_as_slice(woff_data)?;
@@ -382,6 +382,7 @@ fn reconstruct_font(
 
 // Get numberOfHMetrics, https://www.microsoft.com/typography/otspec/hhea.htm
 fn read_num_hmetrics(mut hhea_data: &[u8]) -> Result<u16, WuffErr> {
+    bail_if!(hhea_data.remaining() < 34);
     hhea_data.advance(34); // Skip 34 to reach 'hhea' numberOfHMetrics
     Ok(hhea_data.try_get_u16()?)
 }

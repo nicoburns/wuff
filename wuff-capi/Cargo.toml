@@ -1,6 +1,6 @@
 [package]
 name = "wuff-capi"
-version = "0.1.0"
+version = "0.1.1"
 description = "C API for the wuff WOFF2 decoder, compatible with the woff2 C library's decoding API"
 authors = ["Nico Burns <nico@nicoburns.com>"]
 license = "MIT"
@@ -21,4 +21,4 @@ include = [
 ]
 
 [dependencies]
-wuff = { version = "0.2.6", path = "../wuff", default-features = false, features = ["brotli"] }
+wuff = { version = "0.2.7", path = "../wuff", default-features = false, features = ["brotli"] }

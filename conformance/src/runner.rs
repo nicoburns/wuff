@@ -150,12 +150,12 @@ fn describe_mismatch(name_a: &str, a: &[u8], name_b: &str, b: &[u8]) -> String {
 /// reference binary. Fonts that decompress to more than this are rejected by
 /// the C++ CLI regardless of validity, so for them only wuff and wuff-capi
 /// outputs can be compared.
-const CPP_CLI_MAX_OUTPUT_SIZE: usize = 30 * 1024 * 1024;
+const CPP_CLI_MAX_OUTPUT_SIZE: usize = 128 * 1024 * 1024;
 
 enum Outcome {
     Pass,
     /// wuff and wuff-capi agree; the C++ CLI could not decode the font only
-    /// because its output exceeds the CLI's hardcoded 30MB cap.
+    /// because its output exceeds the CLI's hardcoded 128MB cap.
     PassCppSizeCapped,
     /// All three decoders rejected an input for which rejection is an
     /// acceptable outcome (the committed wpt suite contains deliberately
@@ -225,7 +225,7 @@ fn test_font(decompress: &Path, case: &TestCase, scratch: &Path) -> Outcome {
             wuff_err: wuff_err.to_string(),
         },
         // The reference CLI rejects any font that decompresses to more than
-        // 30MB (woff2::kDefaultMaxSize); compare wuff and capi only.
+        // 128MB (woff2::kDefaultMaxSize); compare wuff and capi only.
         (Err(_), Ok(wuff_out), Some(capi_out)) if wuff_out.len() > CPP_CLI_MAX_OUTPUT_SIZE => {
             if wuff_out == capi_out {
                 Outcome::PassCppSizeCapped
@@ -406,7 +406,7 @@ fn describe_outcome(outcome: &Outcome) -> (&'static str, String) {
         Outcome::Pass => ("PASS", String::new()),
         Outcome::PassCppSizeCapped => (
             "PASS (CPP SIZE-CAPPED)",
-            "wuff and capi agree; cpp CLI rejects >30MB output".to_string(),
+            "wuff and capi agree; cpp CLI rejects >128MB output".to_string(),
         ),
         Outcome::PassConsistentReject => (
             "PASS (WPT REJECT)",

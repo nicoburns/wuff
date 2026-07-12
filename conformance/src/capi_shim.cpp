@@ -21,7 +21,7 @@ uint8_t* conformance_capi_decode(const uint8_t* data, size_t length,
   output.reserve(final_size);
   woff2::WOFF2StringOut out(&output);
   // Like real consumers of this API (e.g. the ots sanitiser), raise the
-  // default 30MB output cap for fonts that decompress to something larger.
+  // default 128MB output cap for fonts that decompress to something larger.
   if (final_size > out.MaxSize()) {
     out.SetMaxSize(final_size);
   }

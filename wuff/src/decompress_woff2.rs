@@ -22,11 +22,47 @@ use crate::{
 const K_MAX_PLAUSIBLE_COMPRESSION_RATIO: f32 = 100.0;
 
 #[cfg(feature = "brotli")]
+/// A `std::io::Write` adapter that appends written bytes to a `Vec<u8>` but refuses to
+/// grow the buffer beyond a hard upper bound.
+///
+/// This enforces the decompression size limit *during* decompression: a Brotli stream that
+/// would expand beyond `limit` bytes is rejected as soon as it tries to write past the limit,
+/// rather than after fully expanding (which an attacker could use to force huge allocations).
+struct BoundedVecWriter<'a> {
+    output: &'a mut Vec<u8>,
+    limit: usize,
+}
+
+#[cfg(feature = "brotli")]
+impl std::io::Write for BoundedVecWriter<'_> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.output.len() + buf.len() > self.limit {
+            return Err(std::io::Error::other(
+                "decompressed data exceeds expected size",
+            ));
+        }
+        self.output.extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[cfg(feature = "brotli")]
 fn decompress_brotli(compressed_data: &[u8], size_hint: usize) -> Result<Vec<u8>, Box<dyn Error>> {
-    use brotli_decompressor::{BrotliResult, DecompressorWriter};
+    use brotli_decompressor::DecompressorWriter;
 
     let mut output: Vec<u8> = Vec::with_capacity(size_hint);
-    let mut decompressor = DecompressorWriter::new(&mut output, 4096);
+    // Wrap the output Vec so that decompression is aborted (with an error) the moment it would
+    // expand beyond `size_hint` bytes. `size_hint` is therefore treated as a HARD upper bound,
+    // not merely a capacity hint.
+    let bounded = BoundedVecWriter {
+        output: &mut output,
+        limit: size_hint,
+    };
+    let mut decompressor = DecompressorWriter::new(bounded, 4096);
 
     // We use `write` rather than `write_all` here (and ignore the case of a partial write) because:
     //   - The Brotli decompressor always completes in one write call anyway
@@ -102,18 +138,11 @@ pub fn decompress_woff2_with_custom_brotli(
     collection_directory.sort_tables_within_each_font(&table_directory);
     let num_fonts = collection_directory.fonts.len();
 
-    // Compute compression ratio
-    let compression_ratio: f32 = (header.total_sfnt_size as f32) / (raw_woff_data.len() as f32);
-
-    // Decompress data with brotli decoder
-    let compressed_data = &input[0..(header.total_compressed_size as usize)];
-    let decompressed_data = decompress_brotli(compressed_data, header.total_sfnt_size as usize)
-        .map_err(|_| WuffErr::GenericError)?;
-
-    // The decompressed data block must be exactly the size of the tables it contains
-    // (tables are stored consecutively with no padding or extraneous data).
-    // <https://www.w3.org/TR/WOFF2/#conform-mustRejectExtraData>
-    bail_if!(decompressed_data.len() != table_directory.uncompressed_size);
+    // Compute compression ratio using the trusted, table-directory-derived uncompressed size
+    // (not the untrusted `totalSfntSize` from the file header). Perform the plausibility check
+    // BEFORE decompressing so an implausible size never drives allocation/decompression.
+    let compression_ratio: f32 =
+        (table_directory.uncompressed_size as f32) / (raw_woff_data.len() as f32);
 
     // Validate header (and compression ratio)
     bail_if!(header.total_sfnt_size < 1);
@@ -123,7 +152,19 @@ pub fn decompress_woff2_with_custom_brotli(
         compression_ratio
     );
 
-    let mut out: Vec<u8> = Vec::with_capacity(header.total_sfnt_size as usize);
+    // Decompress data with brotli decoder. We pass the trusted `uncompressed_size` as the hard
+    // upper bound on the size of the decompressed data.
+    let compressed_data = &input[0..(header.total_compressed_size as usize)];
+    let decompressed_data =
+        decompress_brotli(compressed_data, table_directory.uncompressed_size)
+            .map_err(|_| WuffErr::GenericError)?;
+
+    // The decompressed data block must be exactly the size of the tables it contains
+    // (tables are stored consecutively with no padding or extraneous data).
+    // <https://www.w3.org/TR/WOFF2/#conform-mustRejectExtraData>
+    bail_if!(decompressed_data.len() != table_directory.uncompressed_size);
+
+    let mut out: Vec<u8> = Vec::with_capacity(table_directory.uncompressed_size);
 
     let mut out_header = generate_header(&header, &table_directory, &collection_directory);
     out.extend_from_slice(&out_header.data);

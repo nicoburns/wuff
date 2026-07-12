@@ -341,10 +341,9 @@ pub fn run_and_report(
             failures.lock().unwrap().push((case.name.clone(), outcome));
         }
         let done = done.fetch_add(1, Ordering::Relaxed) + 1;
-        eprint!(
-            "\r[{done}/{total}] {} not ok",
-            failed.load(Ordering::Relaxed)
-        );
+        let failed = failed.load(Ordering::Relaxed);
+        let passed = done - failed;
+        eprint!("\r[{done}/{total}] ({passed} passes, {failed} failures)",);
         let _ = std::io::stderr().flush();
     });
     let _ = fs::remove_dir_all(scratch_root);

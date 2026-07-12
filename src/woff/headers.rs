@@ -125,7 +125,14 @@ impl WoffHeader {
         // Validate
         bail_if!(header.length != input_len_u32);
         bail_if!(header.num_tables == 0);
-        bail_if!(header.reserved != 0);
+
+        // Both the WOFF1 and WOFF2 specs have a reserved field, but:
+        //    - The WOFF1 spec requires decoders to reject files with a non-zero reserved field.
+        //      <https://www.w3.org/TR/WOFF/#conform-reserved>
+        //    - The WOFF2 spec requries decoders to accept files with a non-zero reserved field.
+        //      <https://www.w3.org/TR/WOFF2/#conform-mustNotUseReservedValue>
+        bail_if!(header.woff_version == WoffVersion::Woff1 && header.reserved != 0);
+
         if header.meta_offset != 0 {
             bail_if!(
                 header.meta_offset >= input_len_u32

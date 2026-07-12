@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Formatting check.
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable toolchain with rustfmt
+        run: rustup toolchain install stable --profile minimal --component rustfmt --no-self-update
+      - name: cargo fmt --check
+        run: cargo fmt --all --check
+
+  # Lint with clippy, treating warnings as errors.
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable toolchain with clippy
+        run: rustup toolchain install stable --profile minimal --component clippy --no-self-update
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # Basic compile check of the whole workspace on stable.
+  check:
+    name: check (stable)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update
+      - name: cargo check (default features)
+        run: cargo check --workspace --all-targets
+      - name: cargo check (no default features)
+        run: cargo check -p wuff --no-default-features
+
+  # Verify the crate still builds on its declared MSRV (see `rust-version` in
+  # the Cargo.toml files; keep this in sync).
+  msrv:
+    name: MSRV (1.85)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust 1.85
+        run: rustup toolchain install 1.85 --profile minimal --no-self-update
+      - name: cargo check
+        run: cargo +1.85 check --workspace
+
+  # Verify the library compiles for a bare-metal no_std target.
+  # `z`/flate2 is std-only, so only the core and `brotli` builds are checked.
+  no_std:
+    name: no_std (thumbv7em-none-eabi)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable toolchain with no_std target
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup target add thumbv7em-none-eabi
+      - name: cargo check (core, no_std)
+        run: cargo check -p wuff --no-default-features --target thumbv7em-none-eabi
+      - name: cargo check (brotli, no_std)
+        run: cargo check -p wuff --no-default-features --features brotli --target thumbv7em-none-eabi

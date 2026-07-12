@@ -1,4 +1,4 @@
-use std::{collections::HashMap, error::Error, io::Write};
+use std::{collections::HashMap, error::Error};
 
 use crate::Tag;
 use bytes::{Buf as _, BufMut};
@@ -22,63 +22,19 @@ use crate::{
 const K_MAX_PLAUSIBLE_COMPRESSION_RATIO: f32 = 100.0;
 
 #[cfg(feature = "brotli")]
-/// A `std::io::Write` adapter that appends written bytes to a `Vec<u8>` but refuses to
-/// grow the buffer beyond a hard upper bound.
-///
-/// This enforces the decompression size limit *during* decompression: a Brotli stream that
-/// would expand beyond `limit` bytes is rejected as soon as it tries to write past the limit,
-/// rather than after fully expanding (which an attacker could use to force huge allocations).
-struct BoundedVecWriter<'a> {
-    output: &'a mut Vec<u8>,
-    limit: usize,
-}
+fn decompress_brotli(
+    compressed_data: &[u8],
+    expected_size: usize,
+) -> Result<Vec<u8>, Box<dyn Error>> {
+    use brotli_decompressor::{BrotliResult, brotli_decode};
 
-#[cfg(feature = "brotli")]
-impl std::io::Write for BoundedVecWriter<'_> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        if self.output.len() + buf.len() > self.limit {
-            return Err(std::io::Error::other(
-                "decompressed data exceeds expected size",
-            ));
-        }
-        self.output.extend_from_slice(buf);
-        Ok(buf.len())
+    let mut output = vec![0u8; expected_size];
+    let info = brotli_decode(compressed_data, &mut output);
+
+    if !matches!(info.result, BrotliResult::ResultSuccess) || info.decoded_size != expected_size {
+        return Err(std::io::Error::other("brotli decompression failed").into());
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-#[cfg(feature = "brotli")]
-fn decompress_brotli(compressed_data: &[u8], size_hint: usize) -> Result<Vec<u8>, Box<dyn Error>> {
-    use brotli_decompressor::DecompressorWriter;
-
-    let mut output: Vec<u8> = Vec::with_capacity(size_hint);
-    // Wrap the output Vec so that decompression is aborted (with an error) the moment it would
-    // expand beyond `size_hint` bytes. `size_hint` is therefore treated as a HARD upper bound,
-    // not merely a capacity hint.
-    let bounded = BoundedVecWriter {
-        output: &mut output,
-        limit: size_hint,
-    };
-    let mut decompressor = DecompressorWriter::new(bounded, 4096);
-
-    // We use `write` rather than `write_all` here (and ignore the case of a partial write) because:
-    //   - The Brotli decompressor always completes in one write call anyway
-    //   - The `write_all` function assumes that we want to write all input into the Write sink,
-    //     but that is not the case here
-    //   - This is because the WOFF2 container format allows the section which contains the encoded Brotli
-    //     stream to contain up to 3 padding bytes such that the section is aligned to a 4-byte boundary.
-    //     Those padding bytes are included in the `totalCompressedSize` which we use to size the input buffer
-    //     but are not actually part of the Brotli stream. So in the case that padding bytes are present, the
-    //     decompression will complete before all bytes are consumed.
-    //   - The write_all function will see that not all bytes are consumed, try to continue pushing bytes into
-    //     the decompressor which causes a panic. The fix it use `write` rather than `write_all`
-    let _ = decompressor.write(compressed_data)?;
-
-    decompressor.close()?;
-    drop(decompressor);
     Ok(output)
 }
 
@@ -155,9 +111,8 @@ pub fn decompress_woff2_with_custom_brotli(
     // Decompress data with brotli decoder. We pass the trusted `uncompressed_size` as the hard
     // upper bound on the size of the decompressed data.
     let compressed_data = &input[0..(header.total_compressed_size as usize)];
-    let decompressed_data =
-        decompress_brotli(compressed_data, table_directory.uncompressed_size)
-            .map_err(|_| WuffErr::GenericError)?;
+    let decompressed_data = decompress_brotli(compressed_data, table_directory.uncompressed_size)
+        .map_err(|_| WuffErr::GenericError)?;
 
     // The decompressed data block must be exactly the size of the tables it contains
     // (tables are stored consecutively with no padding or extraneous data).

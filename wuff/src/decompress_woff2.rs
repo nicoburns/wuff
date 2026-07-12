@@ -1,4 +1,4 @@
-use std::{collections::HashMap, error::Error};
+use core::error::Error;
 
 use crate::Tag;
 use bytes::{Buf as _, BufMut};
@@ -32,7 +32,7 @@ fn decompress_brotli(
     let info = brotli_decode(compressed_data, &mut output);
 
     if !matches!(info.result, BrotliResult::ResultSuccess) || info.decoded_size != expected_size {
-        return Err(std::io::Error::other("brotli decompression failed").into());
+        return Err(Box::new(WuffErr::GenericError));
     }
 
     Ok(output)

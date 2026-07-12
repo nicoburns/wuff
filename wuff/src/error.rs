@@ -3,8 +3,8 @@ pub enum WuffErr {
     GenericError,
 }
 
-impl std::fmt::Display for WuffErr {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+impl core::fmt::Display for WuffErr {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
         match self {
             Self::GenericError => write!(f, "WuffErr::GenericError"),
         }

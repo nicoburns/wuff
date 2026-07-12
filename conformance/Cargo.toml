@@ -7,7 +7,7 @@ edition = "2024"
 rust-version = "1.85"
 
 [dependencies]
-wuff = { path = "..", default-features = false, features = ["brotli"] }
+wuff = { path = "../wuff", default-features = false, features = ["brotli"] }
 wuff-capi = { path = "../wuff-capi" }
 rayon = "1.10"
 ureq = "3.3.0"

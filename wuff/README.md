@@ -11,7 +11,7 @@ Wuff takes a compressed WOFF or WOFF2 file and decodes it back into a plain
 font that can be parsed by standard font tooling.
 
 It is hand-ported from Google's [woff2](https://github.com/google/woff2) C++ library and has been verified to produce
-byte-identical output to Google's woff2 library for every font in the [google/fonts](https://github.com/google/fonts) repository
+byte-identical output to Google's woff2 library for every font in the [google/fonts](https://github.com/google/fonts) repository.
 
 ## Why Wuff?
 
@@ -61,47 +61,21 @@ let otf_bytes = decompress_woff2_with_custom_brotli(&woff2_bytes, &mut |input, h
 
 A matching `decompress_woff1_with_custom_z` is available for WOFF1.
 
-## Conformance testing
+## Feature flags
 
-The `conformance` crate is a test harness which verifies that three decoders
-produce byte-identical output for every font it tests:
+- `brotli` *(default)* — bundle a Brotli backend for WOFF2 decoding (`decompress_woff2`).
+- `z` *(default)* — bundle a zlib backend for WOFF1 decoding (`decompress_woff1`).
 
-1. Google's C++ woff2 reference decoder (the `woff2_decompress` binary)
-2. The wuff Rust decoder (this crate)
-3. The `wuff-capi` C++ wrapper around the wuff decoder
+Disable default features to bring your own decompressors via the
+`decompress_woff2_with_custom_brotli` / `decompress_woff1_with_custom_z` entry points.
 
-Requirements: a C++ toolchain, plus `cmake` and `brotli` to build the C++ woff2 tools.
+## About this repository
 
-Its inputs are:
-
-- The WOFF2 files from the `css/WOFF2` section of the [web-platform-tests](https://github.com/web-platform-tests/wpt)
-  committed to this repository under `conformance/wpt/`. This test suite contains deliberately
-  invalid WOFF2 files, so consistent rejection by all three decoders is considered a test pass.
-- Every `ttf`/`otf`/`ttc` font in the [google/fonts](https://github.com/google/fonts)
-  repository, encoded to WOFF2 with the C++ reference encoder (`woff2_compress`).
-
-Run it with:
-
-```sh
-cargo run -rp conformance
-cargo run -rp conformance --refresh-fonts  # re-download google/fonts and rebuild the cache
-```
-
-The first run downloads the google/fonts repository (~1.5GB) and encodes every
-font at maximum Brotli quality, which takes a while. The encoded WOFF2
-files (~820MB) are cached in `.data/encoded`. Use `--refresh-fonts` to a force a cache refresh.
-
-## Repository layout
-
-This repository contains both the published crate and the reference material
-used to develop it:
-
-- `wuff/` - the published crate: an idiomatic Rust rewrite of the decoder.
-- `wuff-capi/` - a C API for the wuff decoder, usable as a drop-in replacement for the woff2 C++ library's decoding API.
-- `conformance/` - the conformance test harness described above.
-- `woff2/` - a copy of Google's [woff2](https://github.com/google/woff2/) C++
-  library, used as the reference implementation.
+This crate lives in the [`wuff` workspace](https://github.com/nicoburns/wuff)
+alongside a C-API wrapper (`wuff-capi`), a conformance test harness, and a copy
+of the reference C++ woff2 library. See the
+[repository README](https://github.com/nicoburns/wuff#readme) for details.
 
 ## License
 
-Licensed under the [MIT License](./LICENSE).
+Licensed under the [MIT License](https://github.com/nicoburns/wuff/blob/main/LICENSE).

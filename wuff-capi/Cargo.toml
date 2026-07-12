@@ -21,4 +21,4 @@ include = [
 ]
 
 [dependencies]
-wuff = { version = "0.2.6", path = "..", default-features = false, features = ["brotli"] }
+wuff = { version = "0.2.6", path = "../wuff", default-features = false, features = ["brotli"] }

@@ -30,8 +30,7 @@
 //! Usage:
 //!
 //! ```text
-//! cargo run -p conformance --release -- [FILTER...] [--limit N] [--jobs N]
-//!     [--data-dir DIR] [--refresh-fonts]
+//! cargo run -p conformance --release -- [FILTER...] [--data-dir DIR] [--refresh-fonts]
 //! ```
 //!
 //! The harness asserts that all three decoders produce byte-identical output
@@ -51,8 +50,6 @@ struct Config {
     data_dir: PathBuf,
     woff2_dir: PathBuf,
     filters: Vec<String>,
-    limit: Option<usize>,
-    jobs: Option<usize>,
     refresh_fonts: bool,
 }
 
@@ -62,8 +59,6 @@ fn parse_args() -> Config {
         data_dir: repo_root.join("data"),
         woff2_dir: repo_root.join("woff2"),
         filters: Vec::new(),
-        limit: None,
-        jobs: None,
         refresh_fonts: false,
     };
     let mut args = std::env::args().skip(1);
@@ -74,21 +69,10 @@ fn parse_args() -> Config {
         };
         match arg.as_str() {
             "--data-dir" => cfg.data_dir = PathBuf::from(value("--data-dir")),
-            "--limit" => {
-                cfg.limit = Some(value("--limit").parse().unwrap_or_else(|_| {
-                    fatal("--limit requires an integer value");
-                }))
-            }
-            "--jobs" => {
-                cfg.jobs = Some(value("--jobs").parse().unwrap_or_else(|_| {
-                    fatal("--jobs requires an integer value");
-                }))
-            }
             "--refresh-fonts" => cfg.refresh_fonts = true,
             "--help" | "-h" => {
                 println!(
-                    "Usage: conformance [FILTER...] [--limit N] [--jobs N] \
-                     [--data-dir DIR] [--refresh-fonts]\n\n\
+                    "Usage: conformance [FILTER...] [--data-dir DIR] [--refresh-fonts]\n\n\
                      FILTER: only test fonts whose path contains the substring"
                 );
                 std::process::exit(0);
@@ -124,12 +108,6 @@ fn discover_files(root: &Path, dir: &Path, extensions: &[&str], out: &mut Vec<Pa
 
 fn main() {
     let cfg = parse_args();
-    if let Some(jobs) = cfg.jobs {
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(jobs)
-            .build_global()
-            .expect("failed to configure thread pool");
-    }
 
     let encoded_dir = cfg.data_dir.join("encoded");
     let scratch_root = cfg.data_dir.join("tmp");
@@ -141,7 +119,7 @@ fn main() {
     prepare::build_encoded_cache(&cfg, &compress, &encoded_dir, &scratch_root);
 
     // Phase 3: collect the test cases (cache + committed wpt suite), apply
-    // the user's FILTER/--limit, and run them.
+    // the user's FILTER, and run them.
     let wpt_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("wpt");
     let mut cases = runner::discover_cases(&encoded_dir, &wpt_dir);
 
@@ -153,9 +131,6 @@ fn main() {
                 .iter()
                 .any(|filter| path.contains(filter.as_str()))
         });
-    }
-    if let Some(limit) = cfg.limit {
-        cases.truncate(limit);
     }
 
     if runner::run_and_report(&decompress, &cases, &scratch_root, &cfg.data_dir) {

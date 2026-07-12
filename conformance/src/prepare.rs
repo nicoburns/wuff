@@ -250,12 +250,7 @@ fn encode_all(
 /// kept on disk. When (re-)building is required, the whole corpus is
 /// downloaded, encoded, and then the extracted sources are deleted before the
 /// caller runs the tests.
-pub fn build_encoded_cache(
-    cfg: &Config,
-    compress: &Path,
-    encoded_dir: &Path,
-    scratch_root: &Path,
-) {
+pub fn build_encoded_cache(cfg: &Config, compress: &Path, encoded_dir: &Path, scratch_root: &Path) {
     let fonts_dir = cfg.data_dir.join("google-fonts");
     let source_mode = cfg.refresh_fonts || fonts_dir.is_dir() || !has_encoded_cache(encoded_dir);
     if !source_mode {
@@ -274,8 +269,8 @@ pub fn build_encoded_cache(
     let fonts_dir = ensure_fonts(&cfg.data_dir, cfg.refresh_fonts);
 
     // Encoding step: encode the entire source corpus to the WOFF2 cache.
-    // This ignores any FILTER/--limit (which restrict only the test run)
-    // so the cache is always complete and the sources can be discarded.
+    // This ignores any FILTER (which restricts only the test run) so the
+    // cache is always complete and the sources can be discarded.
     let mut fonts = Vec::new();
     discover_files(&fonts_dir, &fonts_dir, FONT_EXTENSIONS, &mut fonts);
     eprintln!("Encoding {} fonts to WOFF2...", fonts.len());

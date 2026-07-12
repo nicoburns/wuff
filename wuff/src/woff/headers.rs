@@ -278,10 +278,12 @@ pub struct TableDirectoryEntry {
 impl TableDirectoryEntry {
     /// Whether the table has been transformed
     ///
-    /// For all tables in a font, except for 'glyf' and 'loca' tables, transformation version 0 indicates the null transform
-    /// where the original table data is passed directly to the Brotli compressor for inclusion in the compressed data stream.
-    /// For 'glyf' and 'loca' tables, transformation version 3 indicates the null transform where the original table data was
-    /// passed directly to the Brotli compressor without applying any pre-processing defined in subclause 5.1 and subclause 5.3.
+    /// For all tables in a font, except for 'glyf' and 'loca' tables, any non-zero transformation version indicates that the
+    /// table is transformed (transformation version 0 is the null transform where the original table data is passed directly
+    /// to the Brotli compressor). Unsupported transforms are rejected later during reconstruction. For 'glyf' and 'loca'
+    /// tables the rule is inverted: transformation version 0 indicates a transform, while any non-zero version (e.g. version 3)
+    /// is the null transform where the original table data was passed directly to the Brotli compressor without applying any
+    /// pre-processing defined in subclause 5.1 and subclause 5.3.
     pub fn is_transformed(&self) -> bool {
         match self.version {
             WoffVersion::Woff1 => self.orig_length != self.woff_length,
@@ -376,12 +378,10 @@ impl TableDirectoryEntry {
 
 fn is_transformed(tag: Tag, format: u8) -> bool {
     match tag.as_ref() {
-        // For the glyf and loca tables, format 0 indicates transformed
+        // glyf/loca use transform version 0; any other version is the null transform.
         b"glyf" | b"loca" => format == 0,
-        // For hmtx format 1 indicates transformed
-        b"hmtx" => format == 1,
-        // No other tables support transformation
-        _ => false,
+        // For all other tables, any non-zero transform version indicates a transform.
+        _ => format != 0,
     }
 }
 

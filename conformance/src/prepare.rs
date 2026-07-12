@@ -286,13 +286,13 @@ pub fn build_encoded_cache(cfg: &Config, compress: &Path, encoded_dir: &Path, sc
     );
     // Retry once: transient errors (e.g. Spotlight indexing on macOS)
     // can interrupt large recursive deletes.
-    if fs::remove_dir_all(&fonts_dir).is_err()
-        && let Err(e) = fs::remove_dir_all(&fonts_dir)
-    {
-        eprintln!(
-            "warning: failed to remove {}: {e}; it can be deleted manually",
-            fonts_dir.display()
-        );
+    if fs::remove_dir_all(&fonts_dir).is_err() {
+        if let Err(e) = fs::remove_dir_all(&fonts_dir) {
+            eprintln!(
+                "warning: failed to remove {}: {e}; it can be deleted manually",
+                fonts_dir.display()
+            );
+        }
     }
     let _ = fs::remove_file(cfg.data_dir.join("google-fonts.tar.gz"));
 }

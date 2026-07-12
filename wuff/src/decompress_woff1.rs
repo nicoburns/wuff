@@ -1,5 +1,5 @@
 use crate::{
-    HEAD, Round4, compute_checksum,
+    Round4, compute_checksum,
     error::{WuffErr, bail_if},
     woff::headers::{TableDirectory, TableDirectoryEntry, WoffHeader, WoffVersion},
     write_table_directory_header,

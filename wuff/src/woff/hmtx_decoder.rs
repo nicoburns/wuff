@@ -1,9 +1,6 @@
 use bytes::{Buf, BufMut};
 
-use crate::{
-    compute_checksum,
-    error::{WuffErr, bail_if, bail_with_msg_if},
-};
+use crate::error::{WuffErr, bail_if, bail_with_msg_if};
 
 /// Data decoded from the WOFF2 hmtx table which can be used to reconstruct
 /// an open type hmtx table.

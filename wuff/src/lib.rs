@@ -3,7 +3,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
-#![allow(unused_imports)]
 #![allow(dead_code)]
 #![allow(clippy::needless_range_loop)]
 #![allow(clippy::collapsible_if)]

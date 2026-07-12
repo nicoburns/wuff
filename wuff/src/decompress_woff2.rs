@@ -10,7 +10,7 @@ use crate::{
         glyf_decoder::tranform_glyf_table,
         headers::{
             CollectionDirectory, CollectionDirectoryEntry, TableDirectory, TableDirectoryEntry,
-            WOFF2FontInfo, Woff2, WoffHeader, WoffVersion,
+            WOFF2FontInfo, WoffHeader, WoffVersion,
         },
         hmtx_decoder::{decode_hmtx_table, generate_hmtx_table},
     },

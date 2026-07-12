@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use core::ops::{Deref, DerefMut};
+use std::collections::HashMap;
 
 use crate::Tag;
 use bytes::Buf;

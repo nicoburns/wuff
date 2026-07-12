@@ -1,5 +1,3 @@
-use std::io::{Cursor, Write};
-
 use arrayvec::ArrayVec;
 use bytes::{Buf, BufMut};
 

@@ -256,7 +256,7 @@ pub fn build_encoded_cache(cfg: &Config, compress: &Path, encoded_dir: &Path, sc
     if !source_mode {
         eprintln!(
             "Using encoded font cache at {} (pass --refresh-fonts to re-download sources)",
-            encoded_dir.display()
+            encoded_dir.canonicalize().unwrap().display()
         );
         return;
     }

@@ -81,8 +81,7 @@ pub fn decompress_woff2_with_custom_brotli(
     let compressed_offset = full_input_len - input.len();
     bail_if!(compressed_offset > u32::MAX as usize);
 
-    let mut src_offset =
-        Round4!(compressed_offset as usize + header.total_compressed_size as usize);
+    let mut src_offset = Round4!(compressed_offset + header.total_compressed_size as usize);
     bail_if!(src_offset > full_input_len);
 
     if header.meta_offset != 0 {

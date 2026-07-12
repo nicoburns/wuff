@@ -111,6 +111,11 @@ pub fn decompress_woff2_with_custom_brotli(
     let decompressed_data = decompress_brotli(compressed_data, header.total_sfnt_size as usize)
         .map_err(|_| WuffErr::GenericError)?;
 
+    // The decompressed data block must be exactly the size of the tables it contains
+    // (tables are stored consecutively with no padding or extraneous data).
+    // <https://www.w3.org/TR/WOFF2/#conform-mustRejectExtraData>
+    bail_if!(decompressed_data.len() != table_directory.uncompressed_size);
+
     // Validate header (and compression ratio)
     bail_if!(header.total_sfnt_size < 1);
     bail_with_msg_if!(

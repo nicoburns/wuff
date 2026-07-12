@@ -160,6 +160,9 @@ pub struct TableDirectory {
     pub tables: Vec<TableDirectoryEntry>,
     /// Size of the table directory (in the WOFF) in bytes
     pub size: usize,
+    /// Expected size of the decompressed data block in bytes
+    /// (WOFF2 only: the sum of the lengths of all tables)
+    pub uncompressed_size: usize,
 }
 
 impl Deref for TableDirectory {
@@ -203,6 +206,7 @@ impl TableDirectory {
         Ok(Self {
             tables,
             size: size_of_directory,
+            uncompressed_size: 0, // WOFF2 only
         })
     }
 
@@ -241,6 +245,9 @@ impl TableDirectory {
         Ok(Self {
             tables,
             size: size_of_directory,
+            // Tables are stored consecutively in the decompressed data block, so once all
+            // tables have been processed `offset_in_woff` is the expected size of that block.
+            uncompressed_size: offset_in_woff,
         })
     }
 

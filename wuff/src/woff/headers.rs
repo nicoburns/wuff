@@ -1,5 +1,5 @@
+use alloc::collections::BTreeMap;
 use core::ops::{Deref, DerefMut};
-use std::collections::HashMap;
 
 use crate::Tag;
 use bytes::Buf;
@@ -45,7 +45,7 @@ pub(crate) struct WOFF2FontInfo {
     pub x_mins: Vec<i16>,
     /// Map of table tag to the byte offset of that table's entry in the table directory in the output file
     /// Allows the checksum, offset and length of the table to be written into the table directory once they are known.
-    pub table_entry_by_tag: HashMap<Tag, usize>,
+    pub table_entry_by_tag: BTreeMap<Tag, usize>,
     /// Checksum of the ouput header
     pub header_checksum: u32,
 }

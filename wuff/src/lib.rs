@@ -1,10 +1,11 @@
 //! Pure Rust WOFF and WOFF2 decoder
-
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 #![allow(dead_code)]
 #![allow(clippy::collapsible_if)]
+
+extern crate alloc;
 
 mod decompress_woff1;
 mod decompress_woff2;

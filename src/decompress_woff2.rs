@@ -193,9 +193,9 @@ fn reconstruct_font(
     }
 
     let mut font_checksum: u32 = if header.is_collection() {
-        out_header.checksum
-    } else {
         out_header.font_infos[font_idx].header_checksum
+    } else {
+        out_header.checksum
     };
 
     // Read and store "num_hmetrics" from "hhea" table and then used to reconstruct "hmtx"

@@ -6,12 +6,15 @@
 //!
 //! Inputs are produced by encoding every ttf/otf/ttc font from the
 //! <https://github.com/google/fonts> repository to WOFF2 using the C++
-//! `woff2_compress` reference encoder. Only the encoded WOFF2 files are
-//! cached long-term (in `<data dir>/encoded`, default data dir:
-//! `<repo root>/data`); the downloaded tarball and extracted source tree are
-//! deleted once the cache has been fully built, and subsequent runs are
-//! driven from the cache alone. Pass `--refresh-fonts` to re-download the
-//! sources and rebuild the cache from scratch.
+//! `woff2_compress` reference encoder. This happens in three distinct
+//! phases: the sources are downloaded and extracted, then a separate
+//! encoding step encodes the whole corpus into the WOFF2 cache (in
+//! `<data dir>/encoded`, default data dir: `<repo root>/data`), and finally
+//! the tests run against that cache. The downloaded tarball and extracted
+//! source tree are deleted after encoding and before the tests run, so only
+//! the encoded WOFF2 files are kept long-term and subsequent runs are driven
+//! from the cache alone. Pass `--refresh-fonts` to re-download the sources
+//! and rebuild the cache from scratch.
 //!
 //! In addition, WOFF2 files from the wpt (web-platform-tests) WOFF2
 //! conformance suite, committed to the repository under `conformance/wpt/`,
@@ -283,21 +286,35 @@ fn has_encoded_cache(dir: &Path) -> bool {
     })
 }
 
-/// Recursively find all encoded fonts under the cache dir, returning the
-/// original font paths (i.e. with the `.woff2` suffix stripped) relative to
-/// `root`.
-fn discover_encoded_fonts(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) {
-    for entry in fs::read_dir(dir).expect("failed to read encoded fonts dir") {
+/// Recursively find all entries in the encoded cache under `dir`, turning
+/// them into test cases: `.woff2` files become decode tests, while `.fail`
+/// markers (fonts the reference encoder rejected) become `EncodeFailed`
+/// cases. The case name is the original font path (i.e. with the `.woff2`
+/// or `.fail` suffix stripped) relative to `root`.
+fn discover_cached_cases(root: &Path, dir: &Path, out: &mut Vec<TestCase>) {
+    for entry in fs::read_dir(dir).expect("failed to read encoded cache dir") {
         let path = entry.expect("failed to read dir entry").path();
         if path.is_dir() {
-            discover_encoded_fonts(root, &path, out);
-        } else if let Some(rel) = path
-            .strip_prefix(root)
-            .unwrap()
-            .to_str()
-            .and_then(|s| s.strip_suffix(".woff2"))
-        {
-            out.push(PathBuf::from(rel));
+            discover_cached_cases(root, &path, out);
+            continue;
+        }
+        let Some(rel) = path.strip_prefix(root).unwrap().to_str() else {
+            continue;
+        };
+        if let Some(name) = rel.strip_suffix(".woff2") {
+            out.push(TestCase {
+                name: PathBuf::from(name),
+                input: CaseInput::Decode {
+                    woff2: path.clone(),
+                    reject_ok: false,
+                },
+            });
+        } else if let Some(name) = rel.strip_suffix(".fail") {
+            let msg = fs::read_to_string(&path).unwrap_or_default();
+            out.push(TestCase {
+                name: PathBuf::from(name),
+                input: CaseInput::EncodeFailed(msg),
+            });
         }
     }
 }
@@ -353,6 +370,39 @@ fn encode_font(compress: &Path, src: &Path, dst: &Path, scratch: &Path) -> Resul
         let _ = fs::write(&fail_marker, &msg);
         Err(msg)
     }
+}
+
+/// Encode every source font under `fonts_dir` (given as `fonts`, paths
+/// relative to `fonts_dir`) to the WOFF2 cache at `encoded_dir`, in parallel.
+/// Encoder failures are recorded as `.fail` markers by `encode_font` rather
+/// than aborting the run, so the whole corpus is always processed.
+fn encode_all(
+    compress: &Path,
+    fonts_dir: &Path,
+    encoded_dir: &Path,
+    fonts: &[PathBuf],
+    scratch_root: &Path,
+) {
+    let total = fonts.len();
+    let done = AtomicUsize::new(0);
+    let failed = AtomicUsize::new(0);
+    let scratch_id = AtomicUsize::new(0);
+    fonts.par_iter().for_each(|rel| {
+        let src = fonts_dir.join(rel);
+        let dst = encoded_dir.join(format!("{}.woff2", rel.display()));
+        let scratch = scratch_root.join(scratch_id.fetch_add(1, Ordering::Relaxed).to_string());
+        if encode_font(compress, &src, &dst, &scratch).is_err() {
+            failed.fetch_add(1, Ordering::Relaxed);
+        }
+        let _ = fs::remove_dir_all(&scratch);
+        let done = done.fetch_add(1, Ordering::Relaxed) + 1;
+        eprint!(
+            "\r[{done}/{total}] encoding ({} failed)",
+            failed.load(Ordering::Relaxed)
+        );
+        let _ = io::stderr().flush();
+    });
+    eprintln!();
 }
 
 /// Decode a WOFF2 file with the C++ reference decoder binary.
@@ -495,34 +545,37 @@ enum Outcome {
     Mismatch(String),
 }
 
+/// What a `TestCase` decodes (or why it can't).
+enum CaseInput {
+    /// A ready-made WOFF2 file to decode: an encoded-cache entry for the
+    /// google/fonts corpus, or a committed file for the wpt suite.
+    /// `reject_ok` is true when consistent rejection by all three decoders
+    /// is an acceptable outcome (the wpt suite contains deliberately invalid
+    /// WOFF2 files; encoder-produced input should always decode).
+    Decode { woff2: PathBuf, reject_ok: bool },
+    /// The C++ reference encoder could not encode the source font (recorded
+    /// as a `.fail` marker in the cache); there is nothing to decode.
+    EncodeFailed(String),
+}
+
 /// A single WOFF2 decoding test.
 struct TestCase {
     /// Display name, also used for sorting, filtering and reporting.
     name: PathBuf,
-    /// Source font to encode with woff2_compress (google/fonts corpus), or
-    /// None when `woff2` is a ready-made WOFF2 file.
-    src: Option<PathBuf>,
-    /// The WOFF2 file to decode: the encoded-cache path for google/fonts,
-    /// or the committed file itself for the wpt suite.
-    woff2: PathBuf,
-    /// Whether consistent rejection by all three decoders is an acceptable
-    /// outcome (true for the wpt suite, which contains deliberately
-    /// invalid WOFF2 files; false for encoder-produced input).
-    reject_ok: bool,
+    input: CaseInput,
 }
 
-fn test_font(compress: &Path, decompress: &Path, case: &TestCase, scratch: &Path) -> Outcome {
-    if let Some(src) = &case.src
-        && let Err(msg) = encode_font(compress, src, &case.woff2, scratch)
-    {
-        return Outcome::EncodeFail(msg);
-    }
-    let woff2_bytes = match fs::read(&case.woff2) {
+fn test_font(decompress: &Path, case: &TestCase, scratch: &Path) -> Outcome {
+    let (woff2, reject_ok) = match &case.input {
+        CaseInput::Decode { woff2, reject_ok } => (woff2, *reject_ok),
+        CaseInput::EncodeFailed(msg) => return Outcome::EncodeFail(msg.clone()),
+    };
+    let woff2_bytes = match fs::read(woff2) {
         Ok(bytes) => bytes,
         Err(e) => return Outcome::EncodeFail(format!("failed to read encoded font: {e}")),
     };
 
-    let cpp = cpp_decode(decompress, &case.woff2, scratch);
+    let cpp = cpp_decode(decompress, woff2, scratch);
     let wuff = wuff::decompress_woff2(&woff2_bytes);
     let capi = capi::decode(&woff2_bytes);
 
@@ -536,7 +589,7 @@ fn test_font(compress: &Path, decompress: &Path, case: &TestCase, scratch: &Path
                 Outcome::Pass
             }
         }
-        (Err(_), Err(_), None) if case.reject_ok => Outcome::PassConsistentReject,
+        (Err(_), Err(_), None) if reject_ok => Outcome::PassConsistentReject,
         (Err(cpp_err), Err(wuff_err), None) => Outcome::ConsistentReject {
             cpp_err: cpp_err.clone(),
             wuff_err: wuff_err.to_string(),
@@ -588,7 +641,6 @@ fn main() {
     // once it exists, runs are driven from the cache alone and the sources
     // (and tarball) are not kept on disk.
     let source_mode = cfg.refresh_fonts || fonts_dir.is_dir() || !has_encoded_cache(&encoded_dir);
-    let mut fonts = Vec::new();
     if source_mode {
         if cfg.refresh_fonts {
             // The encoded cache is derived from the sources; refreshing the
@@ -596,24 +648,44 @@ fn main() {
             let _ = fs::remove_dir_all(&encoded_dir);
         }
         let fonts_dir = ensure_fonts(&cfg.data_dir, cfg.refresh_fonts);
+
+        // Encoding step: encode the entire source corpus to the WOFF2 cache.
+        // This ignores any FILTER/--limit (which restrict only the test run)
+        // so the cache is always complete and the sources can be discarded.
+        let mut fonts = Vec::new();
         discover_files(&fonts_dir, &fonts_dir, FONT_EXTENSIONS, &mut fonts);
+        eprintln!("Encoding {} fonts to WOFF2...", fonts.len());
+        encode_all(&compress, &fonts_dir, &encoded_dir, &fonts, &scratch_root);
+        let _ = fs::remove_dir_all(&scratch_root);
+
+        // The cache is now complete, so the extracted source tree (and the
+        // downloaded tarball) are no longer needed and are removed before the
+        // tests run; only the encoded WOFF2 cache is retained.
+        eprintln!(
+            "Removing extracted source fonts ({}); encoded WOFF2 cache retained",
+            fonts_dir.display()
+        );
+        // Retry once: transient errors (e.g. Spotlight indexing on macOS)
+        // can interrupt large recursive deletes.
+        if fs::remove_dir_all(&fonts_dir).is_err()
+            && let Err(e) = fs::remove_dir_all(&fonts_dir)
+        {
+            eprintln!(
+                "warning: failed to remove {}: {e}; it can be deleted manually",
+                fonts_dir.display()
+            );
+        }
+        let _ = fs::remove_file(cfg.data_dir.join("google-fonts.tar.gz"));
     } else {
         eprintln!(
             "Using encoded font cache at {} (pass --refresh-fonts to re-download sources)",
             encoded_dir.display()
         );
-        discover_encoded_fonts(&encoded_dir, &encoded_dir, &mut fonts);
     }
 
-    let mut cases: Vec<TestCase> = fonts
-        .into_iter()
-        .map(|rel| TestCase {
-            src: Some(fonts_dir.join(&rel)),
-            woff2: encoded_dir.join(format!("{}.woff2", rel.display())),
-            name: rel,
-            reject_ok: false,
-        })
-        .collect();
+    // Every run is now driven from the encoded cache.
+    let mut cases: Vec<TestCase> = Vec::new();
+    discover_cached_cases(&encoded_dir, &encoded_dir, &mut cases);
 
     // Ready-made WOFF2 files from the wpt WOFF2 conformance suite, committed
     // to the repository. These are decoded as-is, with no encoding step.
@@ -623,9 +695,10 @@ fn main() {
         discover_files(&wpt_dir, &wpt_dir, &["woff2"], &mut wpt_files);
         cases.extend(wpt_files.into_iter().map(|rel| TestCase {
             name: PathBuf::from("wpt").join(&rel),
-            woff2: wpt_dir.join(&rel),
-            src: None,
-            reject_ok: true,
+            input: CaseInput::Decode {
+                woff2: wpt_dir.join(&rel),
+                reject_ok: true,
+            },
         }));
     }
 
@@ -651,7 +724,7 @@ fn main() {
 
     cases.par_iter().for_each(|case| {
         let scratch = scratch_root.join(scratch_id.fetch_add(1, Ordering::Relaxed).to_string());
-        let outcome = test_font(&compress, &decompress, case, &scratch);
+        let outcome = test_font(&decompress, case, &scratch);
         let _ = fs::remove_dir_all(&scratch);
         if !matches!(outcome, Outcome::Pass) {
             if !matches!(
@@ -673,27 +746,6 @@ fn main() {
     });
     let _ = fs::remove_dir_all(&scratch_root);
     eprintln!();
-
-    // Once every font has been encoded into the cache, the extracted source
-    // tree is no longer needed. Only drop it after a complete (unfiltered)
-    // run so that partial runs can still encode the remaining fonts later.
-    if source_mode && cfg.filters.is_empty() && cfg.limit.is_none() {
-        eprintln!(
-            "Removing extracted source fonts ({}); encoded WOFF2 cache retained",
-            fonts_dir.display()
-        );
-        // Retry once: transient errors (e.g. Spotlight indexing on macOS)
-        // can interrupt large recursive deletes.
-        if fs::remove_dir_all(&fonts_dir).is_err()
-            && let Err(e) = fs::remove_dir_all(&fonts_dir)
-        {
-            eprintln!(
-                "warning: failed to remove {}: {e}; it can be deleted manually",
-                fonts_dir.display()
-            );
-        }
-        let _ = fs::remove_file(cfg.data_dir.join("google-fonts.tar.gz"));
-    }
 
     let mut failures = failures.into_inner().unwrap();
     failures.sort_by(|a, b| a.0.cmp(&b.0));

@@ -61,15 +61,47 @@ let otf_bytes = decompress_woff2_with_custom_brotli(&woff2_bytes, &mut |input, h
 
 A matching `decompress_woff1_with_custom_z` is available for WOFF1.
 
+## Conformance testing
+
+The `conformance` crate is a test harness which verifies that three decoders
+produce byte-identical output for every font it tests:
+
+1. Google's C++ woff2 reference decoder (the `woff2_decompress` binary)
+2. The wuff Rust decoder (this crate)
+3. The `wuff-capi` C++ wrapper around the wuff decoder
+
+Requirements: a C++ toolchain, plus `cmake` and `brotli` to build the C++ woff2 tools.
+
+Its inputs are:
+
+- The WOFF2 files from the `css/WOFF2` section of the [web-platform-tests](https://github.com/web-platform-tests/wpt)
+  committed to this repository under `conformance/wpt/`. This test suite contains deliberately
+  invalid WOFF2 files, so consistent rejection by all three decoders is considered a test pass.
+- Every `ttf`/`otf`/`ttc` font in the [google/fonts](https://github.com/google/fonts)
+  repository, encoded to WOFF2 with the C++ reference encoder (`woff2_compress`).
+
+Run it with:
+
+```sh
+cargo run -rp conformance
+cargo run -rp conformance --refresh-fonts  # re-download google/fonts and rebuild the cache
+```
+
+The first run downloads the google/fonts repository (~1.5GB) and encodes every
+font at maximum Brotli quality, which takes a while. The encoded WOFF2
+files (~820MB) are cached in `.data/encoded`. Use `--refresh-fonts` to a force a cache refresh.
+
 ## Repository layout
 
 This repository contains both the published crate and the reference material
 used to develop it:
 
-- `src/` — the published crate: an idiomatic Rust rewrite of the decoder.
-- `woff2/` — a copy of Google's [woff2](https://github.com/google/woff2/) C++
+- `src/` - the published crate: an idiomatic Rust rewrite of the decoder.
+- `wuff-capi/` - a C API for the wuff decoder, usable as a drop-in replacement for the woff2 C++ library's decoding API.
+- `conformance/` - the conformance test harness described above.
+- `woff2/` - a copy of Google's [woff2](https://github.com/google/woff2/) C++
   library, used as the reference implementation.
-- `old/` — the initial, direct translation of the C++ code into Rust.
+- `old/` - the initial, direct translation of the C++ code into Rust.
 
 ## License
 

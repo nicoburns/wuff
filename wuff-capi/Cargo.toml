@@ -11,7 +11,7 @@ categories = ["parsing", "external-ffi-bindings"]
 readme = "README.md"
 edition = "2024"
 rust-version = "1.85"
-links = "woff2"
+links = "wuff"
 include = [
     "Cargo.toml",
     "README.md",

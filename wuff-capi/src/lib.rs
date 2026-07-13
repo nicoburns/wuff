@@ -9,7 +9,7 @@
 //! only its decoding API.
 //!
 //! Build scripts of dependent crates can locate the headers via the
-//! `DEP_WOFF2_INCLUDE_DIR` environment variable.
+//! `DEP_WUFF_INCLUDE_DIR` environment variable.
 
 use std::panic::catch_unwind;
 

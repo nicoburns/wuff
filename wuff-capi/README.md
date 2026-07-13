@@ -21,13 +21,13 @@ provided. The encoding API (`woff2/encode.h`) is not yet implemented.
 ## Usage (from Rust)
 
 Add `wuff-capi` as a dependency of the crate whose build script compiles the
-C/C++ code that consumes the woff2 API. This crate sets `links = "woff2"`, and
+C/C++ code that consumes the woff2 API. This crate sets `links = "wuff"`, and
 its build script exports the location of its headers, which is available in
-dependent build scripts as the `DEP_WOFF2_INCLUDE_DIR` environment variable:
+dependent build scripts as the `DEP_WUFF_INCLUDE_DIR` environment variable:
 
 ```rust
 // build.rs of a dependent crate
-let woff2_include_dir = std::env::var("DEP_WOFF2_INCLUDE_DIR").unwrap();
+let woff2_include_dir = std::env::var("DEP_WUFF_INCLUDE_DIR").unwrap();
 cc::Build::new()
     .cpp(true)
     .include(woff2_include_dir)

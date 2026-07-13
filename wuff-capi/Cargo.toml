@@ -1,6 +1,6 @@
 [package]
 name = "wuff-capi"
-version = "0.1.1"
+version = "0.2.0"
 description = "C API for the wuff WOFF2 decoder, compatible with the woff2 C library's decoding API"
 authors = ["Nico Burns <nico@nicoburns.com>"]
 license = "MIT"

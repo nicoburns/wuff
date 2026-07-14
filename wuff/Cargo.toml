@@ -31,7 +31,6 @@ font_compression_bin = []
 debug = []
 
 [dependencies]
-arrayvec = { version = "0.7.6", default-features = false }
 bytes = { version = "1.10.1", default-features = false }
 # `brotli` is no_std-compatible: we drive `brotli-decompressor` with our own
 # `alloc`-backed allocator, so its `std` default feature is disabled.

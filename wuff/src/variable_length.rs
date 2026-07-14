@@ -8,7 +8,6 @@
 
 use alloc::vec::Vec;
 
-use arrayvec::ArrayVec;
 use bytes::Buf;
 
 use crate::error::{WuffErr, bail, bail_if};
@@ -46,22 +45,31 @@ fn Size255UShort(value: u16) -> usize {
     }
 }
 
-fn Write255UShort(value: i32) -> ArrayVec<u8, 3> {
-    let mut packed: ArrayVec<u8, 3> = ArrayVec::new();
-    if value < 253 {
-        packed.push(value as u8);
-    } else if value < 506 {
-        packed.push(255);
-        packed.push((value - 253) as u8);
-    } else if value < 762 {
-        packed.push(254);
-        packed.push((value - 506) as u8);
-    } else {
-        packed.push(253);
-        packed.push((value >> 8) as u8);
-        packed.push((value & 0xff) as u8);
+// Last byte is the length
+#[derive(Copy, Clone)]
+struct UShort255([u8; 4]);
+
+impl<'a> IntoIterator for &'a UShort255 {
+    type Item = u8;
+    type IntoIter = core::iter::Copied<core::slice::Iter<'a, u8>>;
+
+    #[inline(always)]
+    fn into_iter(self) -> Self::IntoIter {
+        let len = self.0[3] as usize;
+        self.0[0..len].iter().copied()
     }
-    packed
+}
+
+fn Write255UShort(value: i32) -> UShort255 {
+    if value < 253 {
+        UShort255([value as u8, 0, 0, 1])
+    } else if value < 506 {
+        UShort255([255, (value - 253) as u8, 0, 2])
+    } else if value < 762 {
+        UShort255([254, (value - 506) as u8, 0, 2])
+    } else {
+        UShort255([253, (value >> 8) as u8, (value & 0xff) as u8, 3])
+    }
 }
 
 pub(crate) fn Store255UShort(val: i32, offset: &mut usize, dst: &mut [u8]) {

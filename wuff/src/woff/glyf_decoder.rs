@@ -1,6 +1,5 @@
 use alloc::{vec, vec::Vec};
 
-use arrayvec::ArrayVec;
 use bytes::{Buf, BufMut};
 
 use crate::{
@@ -88,25 +87,27 @@ impl GlyfDecoder<'_> {
         bail_if!(offset > data.len());
 
         // Invariant from here on: data_size >= offset
-        let mut substreams: ArrayVec<&[u8], NUM_SUB_STREAMS> = ArrayVec::new();
-        for _ in 0..NUM_SUB_STREAMS {
+        let mut read_stream = || {
             let substream_size: usize = input.try_get_u32()? as usize;
             bail_if!(substream_size > data.len() - offset);
-            substreams.push(&data[offset..(offset + substream_size)]);
+            let substream_range = offset..(offset + substream_size);
             offset += substream_size;
-        }
+
+            Ok(&data[substream_range])
+        };
+
+        let n_contour_stream = read_stream()?;
+        let n_points_stream = read_stream()?;
+        let flag_stream = read_stream()?;
+        let glyph_stream = read_stream()?;
+        let composite_stream = read_stream()?;
+        let unsplit_bbox_stream = read_stream()?;
+        let instruction_stream = read_stream()?;
 
         // Safe because num_glyphs is bounded
         let bitmap_length: usize = ((num_glyphs as usize + 31) >> 5) << 2;
-        bail_if!(bitmap_length > substreams[5].len());
-
-        let n_contour_stream = substreams[0];
-        let n_points_stream = substreams[1];
-        let flag_stream = substreams[2];
-        let glyph_stream = substreams[3];
-        let composite_stream = substreams[4];
-        let (bbox_bitmap, bbox_stream) = substreams[5].split_at(bitmap_length);
-        let instruction_stream = substreams[6];
+        bail_if!(bitmap_length > unsplit_bbox_stream.len());
+        let (bbox_bitmap, bbox_stream) = unsplit_bbox_stream.split_at(bitmap_length);
 
         let mut overlap_bitmap: Option<&[u8]> = None;
         if has_overlap_bitmap {

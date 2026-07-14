@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.2.8
+- Remove `arrayvec` dependency
+
 ## 0.2.7
 
 - The `wuff` crate is now `no_std` compatible

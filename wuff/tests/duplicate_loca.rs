@@ -1,11 +1,11 @@
 //! Regression test for a duplicate transformed `loca` table.
 //!
-//! `fixtures/valid-transformed-loca.woff2` is the wpt `directory-knowntags-001.woff2` font,
-//! which has a transformed `glyf`/`loca` pair. `fixtures/duplicate-loca.woff2` is that same
-//! font with a byte-identical copy of its `loca` table directory entry inserted (numTables
-//! incremented, header length and trailing padding adjusted). A transformed `loca` declares
-//! transformLength == 0, so the copy adds no bytes to the compressed block: only the table
-//! directory grows, and the brotli stream is untouched.
+//! `fixtures/duplicate-loca.woff2` is the wpt `directory-knowntags-001.woff2` font (which has
+//! a transformed `glyf`/`loca` pair, and is decoded here as a control) with a byte-identical
+//! copy of its `loca` table directory entry inserted: numTables incremented, header length and
+//! trailing padding adjusted. A transformed `loca` declares transformLength == 0, so the copy
+//! adds no bytes to the compressed block: only the table directory grows, and the brotli stream
+//! is untouched.
 //!
 //! Only the font's `loca_idx` (the last `loca` in the directory) has its metadata computed
 //! while reconstructing `glyf`, so the other `loca` used to fall through to an
@@ -14,7 +14,7 @@
 
 #![cfg(feature = "brotli")]
 
-const VALID: &[u8] = include_bytes!("fixtures/valid-transformed-loca.woff2");
+const VALID: &[u8] = include_bytes!("../../conformance/wpt/woff2/directory-knowntags-001.woff2");
 const DUPLICATE_LOCA: &[u8] = include_bytes!("fixtures/duplicate-loca.woff2");
 
 #[test]

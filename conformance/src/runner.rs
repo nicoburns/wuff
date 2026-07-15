@@ -23,15 +23,15 @@ mod capi {
         fn conformance_capi_free(ptr: *mut u8);
     }
 
-    pub fn decode(data: &[u8]) -> Option<Vec<u8>> {
+    pub fn decode(data: &[u8]) -> Result<Vec<u8>, ()> {
         let mut len = 0usize;
         let ptr = unsafe { conformance_capi_decode(data.as_ptr(), data.len(), &mut len) };
         if ptr.is_null() {
-            return None;
+            return Err(());
         }
         let out = unsafe { std::slice::from_raw_parts(ptr, len) }.to_vec();
         unsafe { conformance_capi_free(ptr) };
-        Some(out)
+        Ok(out)
     }
 }
 
@@ -231,7 +231,7 @@ fn test_font(decompress: &Path, case: &TestCase, scratch: &Path) -> Outcome {
     let capi = capi::decode(&woff2_bytes);
 
     match (&cpp, &wuff, &capi) {
-        (Ok(cpp_out), Ok(wuff_out), Some(capi_out)) => {
+        (Ok(cpp_out), Ok(wuff_out), Ok(capi_out)) => {
             if cpp_out != wuff_out {
                 Outcome::Mismatch(describe_mismatch("cpp", cpp_out, "wuff", wuff_out))
             } else if cpp_out != capi_out {
@@ -240,14 +240,14 @@ fn test_font(decompress: &Path, case: &TestCase, scratch: &Path) -> Outcome {
                 Outcome::Pass
             }
         }
-        (Err(_), Err(_), None) if reject_ok => Outcome::PassConsistentReject,
-        (Err(cpp_err), Err(wuff_err), None) => Outcome::ConsistentReject {
+        (Err(_), Err(_), Err(_)) if reject_ok => Outcome::PassConsistentReject,
+        (Err(cpp_err), Err(wuff_err), Err(_)) => Outcome::ConsistentReject {
             cpp_err: cpp_err.clone(),
             wuff_err: wuff_err.to_string(),
         },
         // The reference CLI rejects any font that decompresses to more than
         // 128MB (woff2::kDefaultMaxSize); compare wuff and capi only.
-        (Err(_), Ok(wuff_out), Some(capi_out)) if wuff_out.len() > CPP_CLI_MAX_OUTPUT_SIZE => {
+        (Err(_), Ok(wuff_out), Ok(capi_out)) if wuff_out.len() > CPP_CLI_MAX_OUTPUT_SIZE => {
             if wuff_out == capi_out {
                 Outcome::PassCppSizeCapped
             } else {
@@ -260,7 +260,7 @@ fn test_font(decompress: &Path, case: &TestCase, scratch: &Path) -> Outcome {
                 "cpp {}, wuff {}, capi {}",
                 status(cpp.is_ok()),
                 status(wuff.is_ok()),
-                status(capi.is_some()),
+                status(capi.is_ok()),
             );
             if let Err(e) = &cpp {
                 write!(msg, "; cpp error: {e}").unwrap();

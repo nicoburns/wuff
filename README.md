@@ -75,7 +75,7 @@ Requirements: a C++ toolchain, plus `cmake` and `brotli` to build the C++ woff2 
 Its inputs are:
 
 - The WOFF2 files from the `css/WOFF2` section of the [web-platform-tests](https://github.com/web-platform-tests/wpt)
-  committed to this repository under `conformance/wpt/`. This test suite contains deliberately
+  committed to this repository under `conformance/fonts/wpt/`. This test suite contains deliberately
   invalid WOFF2 files, so consistent rejection by all three decoders is considered a test pass.
 - Every `ttf`/`otf`/`ttc` font in the [google/fonts](https://github.com/google/fonts)
   repository, encoded to WOFF2 with the C++ reference encoder (`woff2_compress`).

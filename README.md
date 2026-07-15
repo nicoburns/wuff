@@ -84,7 +84,7 @@ Run it with:
 
 ```sh
 cargo run -rp conformance
-cargo run -rp conformance --refresh-fonts  # re-download google/fonts and rebuild the cache
+cargo run -rp conformance -- --refresh-fonts  # re-download google/fonts and rebuild the cache
 ```
 
 The first run downloads the google/fonts repository (~1.5GB) and encodes every

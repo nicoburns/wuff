@@ -277,8 +277,13 @@ fn reconstruct_font(
 
             // Return glyf metadata
             glyf_metadata
-        } else if table.tag == LOCA {
-            unreachable!("loca table is computed when glyf table is processed");
+        }
+        // A "loca" table whose metadata has not already been computed. Only the font's
+        // `loca_idx` is processed alongside "glyf" (and "glyf" sorts first), so this is a
+        // second "loca" within the same font. Table tags must be unique within a font, so
+        // reject.
+        else if table.tag == LOCA {
+            bail!()
         }
         // hmtx table
         else if table.tag == HMTX {

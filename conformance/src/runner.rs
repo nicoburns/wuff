@@ -231,6 +231,8 @@ fn test_font(decompress: &Path, case: &TestCase, scratch: &Path) -> Outcome {
     let capi = capi::decode(&woff2_bytes);
 
     match (&cpp, &wuff, &capi) {
+        // All decoders succeed
+        // Compare output for byte-identity
         (Ok(cpp_out), Ok(wuff_out), Ok(capi_out)) => {
             if cpp_out != wuff_out {
                 Outcome::Mismatch(describe_mismatch("cpp", cpp_out, "wuff", wuff_out))
@@ -240,13 +242,25 @@ fn test_font(decompress: &Path, case: &TestCase, scratch: &Path) -> Outcome {
                 Outcome::Pass
             }
         }
-        (Err(_), Err(_), Err(_)) if reject_ok => Outcome::PassConsistentReject,
-        (Err(cpp_err), Err(wuff_err), Err(_)) => Outcome::ConsistentReject {
-            cpp_err: cpp_err.clone(),
-            wuff_err: wuff_err.to_string(),
-        },
-        // The reference CLI rejects any font that decompresses to more than
-        // 128MB (woff2::kDefaultMaxSize); compare wuff and capi only.
+
+        // All decoders fail
+        // This is counted as a pass for local test cases which deliberately include invalid inputs
+        // It is counted a fail for encoded ttf files (google fonts), which should always be valid.
+        (Err(cpp_err), Err(wuff_err), Err(_)) => {
+            if reject_ok {
+                Outcome::PassConsistentReject
+            } else {
+                Outcome::ConsistentReject {
+                    cpp_err: cpp_err.clone(),
+                    wuff_err: wuff_err.to_string(),
+                }
+            }
+        }
+
+        // C++ decoder fails, others both succeed.
+        //
+        // Pass if output > 128MB due to `kDefaultMaxSize` limit of C++ decoder. Else fail.
+        // Compare wuff and wuff-capi for byte-identity
         (Err(_), Ok(wuff_out), Ok(capi_out)) if wuff_out.len() > CPP_CLI_MAX_OUTPUT_SIZE => {
             if wuff_out == capi_out {
                 Outcome::PassCppSizeCapped
@@ -254,6 +268,8 @@ fn test_font(decompress: &Path, case: &TestCase, scratch: &Path) -> Outcome {
                 Outcome::Mismatch(describe_mismatch("wuff", wuff_out, "capi", capi_out))
             }
         }
+
+        // There is some other mismatch in outcomes
         _ => {
             let status = |ok: bool| if ok { "accepted" } else { "rejected" };
             let mut msg = format!(
@@ -350,15 +366,13 @@ pub fn run_and_report(
         let scratch = scratch_root.join(scratch_id.fetch_add(1, Ordering::Relaxed).to_string());
         let outcome = test_font(decompress, case, &scratch);
         let _ = fs::remove_dir_all(&scratch);
-        if !matches!(outcome, Outcome::Pass) {
-            if !matches!(
-                outcome,
-                Outcome::PassCppSizeCapped | Outcome::PassConsistentReject
-            ) {
-                failed.fetch_add(1, Ordering::Relaxed);
-                let (category, details) = describe_outcome(&outcome);
-                eprintln!("\r{}: {}: {}", category, case.name.display(), details);
-            }
+        if !matches!(
+            outcome,
+            Outcome::Pass | Outcome::PassCppSizeCapped | Outcome::PassConsistentReject
+        ) {
+            failed.fetch_add(1, Ordering::Relaxed);
+            let (category, details) = describe_outcome(&outcome);
+            eprintln!("\r{}: {}: {}", category, case.name.display(), details);
             failures.lock().unwrap().push((case.name.clone(), outcome));
         }
         let done = done.fetch_add(1, Ordering::Relaxed) + 1;
@@ -390,20 +404,21 @@ pub fn run_and_report(
         disagreement,
         mismatch,
         cpp_size_capped,
-        wpt_reject,
+        correct_reject,
         panic,
-        _,
+        pass_byte_identical,
     ] = counts;
     let fail = failures.len();
     let pass = total - fail;
     println!("\nResults\n=======");
     println!("pass:                      {pass}");
-    println!("  pass (cpp size-capped):  {cpp_size_capped}");
-    println!("  pass (wpt reject):       {wpt_reject}");
+    println!("  byte identical:          {pass_byte_identical}");
+    println!("  correctly reject:        {correct_reject}");
+    println!("  cpp size-capped:         {cpp_size_capped}");
     println!("fail:                      {fail}");
     println!("  mismatch:                {mismatch}");
     println!("  disagreement:            {disagreement}");
-    println!("  consistent reject:       {consistent_reject}");
+    println!("  consistent reject ttf:   {consistent_reject}");
     println!("  panic:                   {panic}");
     println!("  encode fail:             {encode_fail}");
     println!("Report written to {}", report_path.display());

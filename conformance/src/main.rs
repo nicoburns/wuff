@@ -21,11 +21,12 @@
 //! reporting, and this top-level module ties them together (argument parsing
 //! plus a few shared helpers).
 //!
-//! In addition, WOFF2 files from the wpt (web-platform-tests) WOFF2
-//! conformance suite, committed to the repository under `conformance/fonts/wpt/`,
-//! are decoded as-is. As that suite contains deliberately invalid files,
-//! consistent rejection by all three decoders is an acceptable outcome for
-//! these inputs (reported as "pass (wpt reject)").
+//! In addition, ready-made WOFF2 files committed to the repository under
+//! `conformance/fonts/` (such as the wpt (web-platform-tests) WOFF2
+//! conformance suite in `conformance/fonts/wpt/`) are decoded as-is. As
+//! these suites contain deliberately invalid files, consistent rejection by
+//! all three decoders is an acceptable outcome for these inputs (reported as
+//! "pass (wpt reject)").
 //!
 //! Usage:
 //!
@@ -118,12 +119,10 @@ fn main() {
     let (compress, decompress) = prepare::ensure_woff2_tools(&cfg.woff2_dir);
     prepare::build_encoded_cache(&cfg, &compress, &encoded_dir, &scratch_root);
 
-    // Phase 3: collect the test cases (cache + committed wpt suite), apply
+    // Phase 3: collect the test cases (cache + committed font suites), apply
     // the user's FILTER, and run them.
-    let wpt_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("fonts")
-        .join("wpt");
-    let mut cases = runner::discover_cases(&encoded_dir, &wpt_dir);
+    let fonts_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fonts");
+    let mut cases = runner::discover_cases(&encoded_dir, &fonts_dir);
 
     cases.sort_by(|a, b| a.name.cmp(&b.name));
     if !cfg.filters.is_empty() {

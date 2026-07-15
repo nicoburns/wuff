@@ -286,20 +286,20 @@ fn discover_cached_cases(root: &Path, dir: &Path, out: &mut Vec<TestCase>) {
 }
 
 /// Build the full list of test cases: every entry in the encoded cache plus
-/// the committed wpt WOFF2 conformance suite (decoded as-is).
-pub fn discover_cases(encoded_dir: &Path, wpt_dir: &Path) -> Vec<TestCase> {
+/// every committed WOFF2 suite found under `fonts_dir` (decoded as-is).
+pub fn discover_cases(encoded_dir: &Path, fonts_dir: &Path) -> Vec<TestCase> {
     let mut cases = Vec::new();
     discover_cached_cases(encoded_dir, encoded_dir, &mut cases);
 
-    // Ready-made WOFF2 files from the wpt WOFF2 conformance suite, committed
-    // to the repository. These are decoded as-is, with no encoding step.
-    if wpt_dir.is_dir() {
-        let mut wpt_files = Vec::new();
-        crate::discover_files(wpt_dir, wpt_dir, &["woff2"], &mut wpt_files);
-        cases.extend(wpt_files.into_iter().map(|rel| TestCase {
-            name: PathBuf::from("wpt").join(&rel),
+    // Ready-made WOFF2 files committed to the repository (e.g. the wpt
+    // conformance suite). These are decoded as-is, with no encoding step.
+    if fonts_dir.is_dir() {
+        let mut font_files = Vec::new();
+        crate::discover_files(fonts_dir, fonts_dir, &["woff2"], &mut font_files);
+        cases.extend(font_files.into_iter().map(|rel| TestCase {
+            name: rel.clone(),
             input: CaseInput::Decode {
-                woff2: wpt_dir.join(&rel),
+                woff2: fonts_dir.join(&rel),
                 reject_ok: true,
             },
         }));

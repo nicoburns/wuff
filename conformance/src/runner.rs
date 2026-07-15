@@ -173,6 +173,20 @@ enum Outcome {
     Disagreement(String),
     /// All three decoders succeeded but the outputs were not byte-identical.
     Mismatch(String),
+    /// The wuff decoder panicked. wuff must never panic on any input, so this
+    /// is always a conformance failure.
+    Panic(String),
+}
+
+/// Extract a human-readable message from a caught panic payload.
+fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic".to_string()
+    }
 }
 
 /// What a `TestCase` decodes (or why it can't).
@@ -206,7 +220,14 @@ fn test_font(decompress: &Path, case: &TestCase, scratch: &Path) -> Outcome {
     };
 
     let cpp = cpp_decode(decompress, woff2, scratch);
-    let wuff = wuff::decompress_woff2(&woff2_bytes);
+    // wuff must never panic on any input: catch unwinding panics and treat
+    // them as an outright failure rather than letting them propagate.
+    let wuff = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        wuff::decompress_woff2(&woff2_bytes)
+    })) {
+        Ok(result) => result,
+        Err(payload) => return Outcome::Panic(panic_message(payload)),
+    };
     let capi = capi::decode(&woff2_bytes);
 
     match (&cpp, &wuff, &capi) {
@@ -353,7 +374,7 @@ pub fn run_and_report(
     failures.sort_by(|a, b| a.0.cmp(&b.0));
 
     // Summarise and write a report file.
-    let mut counts = [0usize; 7];
+    let mut counts = [0usize; 8];
     let mut report = String::new();
     for (rel, outcome) in &failures {
         let (category, details) = describe_outcome(outcome);
@@ -370,6 +391,7 @@ pub fn run_and_report(
         mismatch,
         cpp_size_capped,
         wpt_reject,
+        panic,
         _,
     ] = counts;
     let pass = total - failures.len();
@@ -380,13 +402,14 @@ pub fn run_and_report(
     println!("  mismatch:                {mismatch}");
     println!("  disagreement:            {disagreement}");
     println!("  consistent reject:       {consistent_reject}");
+    println!("  panic:                   {panic}");
     println!("  encode fail:             {encode_fail}");
     println!("Report written to {}", report_path.display());
 
     // Encoder failures don't reflect on the decoders under test; everything
-    // else (mismatches, disagreements, consistent rejects of encoder output)
-    // is a conformance failure.
-    mismatch + disagreement + consistent_reject > 0
+    // else (mismatches, disagreements, consistent rejects of encoder output,
+    // and any wuff panic) is a conformance failure.
+    mismatch + disagreement + consistent_reject + panic > 0
 }
 
 fn category_index(outcome: &Outcome) -> usize {
@@ -397,7 +420,8 @@ fn category_index(outcome: &Outcome) -> usize {
         Outcome::Mismatch(_) => 3,
         Outcome::PassCppSizeCapped => 4,
         Outcome::PassConsistentReject => 5,
-        Outcome::Pass => 6,
+        Outcome::Panic(_) => 6,
+        Outcome::Pass => 7,
     }
 }
 
@@ -419,5 +443,6 @@ fn describe_outcome(outcome: &Outcome) -> (&'static str, String) {
         ),
         Outcome::Disagreement(msg) => ("DISAGREEMENT", msg.clone()),
         Outcome::Mismatch(msg) => ("MISMATCH", msg.clone()),
+        Outcome::Panic(msg) => ("PANIC", format!("wuff panicked: {msg}")),
     }
 }

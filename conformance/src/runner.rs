@@ -394,11 +394,13 @@ pub fn run_and_report(
         panic,
         _,
     ] = counts;
-    let pass = total - failures.len();
-    println!("\nResults:");
-    println!("  pass:                    {pass}");
+    let fail = failures.len();
+    let pass = total - fail;
+    println!("\nResults\n=======");
+    println!("pass:                      {pass}");
     println!("  pass (cpp size-capped):  {cpp_size_capped}");
     println!("  pass (wpt reject):       {wpt_reject}");
+    println!("fail:                      {fail}");
     println!("  mismatch:                {mismatch}");
     println!("  disagreement:            {disagreement}");
     println!("  consistent reject:       {consistent_reject}");

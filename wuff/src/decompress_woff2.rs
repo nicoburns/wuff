@@ -120,6 +120,13 @@ pub fn decompress_woff2_with_custom_brotli(
     // Update header
     out[0..out_header.data.len()].copy_from_slice(&out_header.data);
 
+    // The output buffer's initial capacity (`uncompressed_size`) is the size of the transformed
+    // data block, which is typically smaller than the reconstructed font (transformed glyf is
+    // more compact than raw glyf + loca). Growing past the initial capacity leaves the Vec with
+    // up to ~2x excess capacity, so release the excess before handing the buffer to the caller,
+    // who may retain it for a long time.
+    out.shrink_to_fit();
+
     Ok(out)
 }
 

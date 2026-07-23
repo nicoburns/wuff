@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+- Fix a memory-usage regression introduced in 0.2.7: the WOFF2 output buffer could retain up to
+  ~2x its final size in unused capacity. It is now shrunk to fit before being returned.
+
 ## 0.2.8
 - Remove `arrayvec` dependency
 

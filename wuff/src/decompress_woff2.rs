@@ -97,25 +97,34 @@ pub fn decompress_woff2_with_custom_brotli(
     // <https://www.w3.org/TR/WOFF2/#conform-mustRejectExtraData>
     bail_if!(decompressed_data.len() != table_directory.uncompressed_size);
 
-    // Size the output buffer using the expected reconstructed size computed from the table
-    // directory: output headers + the 4-byte-padded `origLength` of each table. For a conformant
-    // font this is exact (it is how the spec defines `totalSfntSize`); it can only be wrong where
-    // a declared `origLength` is inaccurate (possible for glyf/hmtx, whose reconstructed sizes
-    // are not required to match). The `origLength` values are attacker-controlled, so bound the
-    // hint by the same compression-ratio plausibility limit as the decompressed size, ensuring an
-    // inflated directory cannot force an allocation larger than 100x the input size. Note this is
-    // only a capacity hint: it does not affect which fonts are accepted or the bytes produced.
+    // Choose a capacity hint for the output buffer. For a well-formed font `totalSfntSize` is
+    // the exact size of the reconstructed font, but it is untrusted, so validate it against the
+    // expected reconstructed size computed from the table directory: output headers + the
+    // 4-byte-padded `origLength` of each table. That expected size is itself a slight
+    // over-estimate for a conformant font (reconstructed glyf/hmtx tables may legitimately be
+    // smaller than their declared `origLength`), so it bounds `totalSfntSize` from above and
+    // serves as the fallback hint when `totalSfntSize` is implausible. The `origLength` values
+    // are also attacker-controlled, so additionally bound the hint by the same compression-ratio
+    // plausibility limit as the decompressed size, ensuring an inflated directory cannot force
+    // an allocation larger than 100x the input size. Note this is only a capacity hint: it does
+    // not affect which fonts are accepted or the bytes produced.
     let expected_sfnt_size: u64 = compute_header_size(&collection_directory, header.is_collection())
         as u64
         + table_directory
             .iter()
             .map(|table| Round4!(table.orig_length as u64))
             .sum::<u64>();
+    let total_sfnt_size = header.total_sfnt_size as u64;
+    let sfnt_size_is_plausible = total_sfnt_size <= expected_sfnt_size
+        && total_sfnt_size >= table_directory.uncompressed_size as u64;
     let max_plausible_size =
         (K_MAX_PLAUSIBLE_COMPRESSION_RATIO as u64).saturating_mul(raw_woff_data.len() as u64);
-    let capacity_hint = expected_sfnt_size
-        .min(max_plausible_size)
-        .max(table_directory.uncompressed_size as u64) as usize;
+    let capacity_hint = if sfnt_size_is_plausible {
+        total_sfnt_size
+    } else {
+        expected_sfnt_size
+    }
+    .min(max_plausible_size) as usize;
     let mut out: Vec<u8> = Vec::with_capacity(capacity_hint);
 
     let mut out_header = generate_header(&header, &table_directory, &collection_directory);

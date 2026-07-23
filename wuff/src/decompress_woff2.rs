@@ -97,7 +97,34 @@ pub fn decompress_woff2_with_custom_brotli(
     // <https://www.w3.org/TR/WOFF2/#conform-mustRejectExtraData>
     bail_if!(decompressed_data.len() != table_directory.uncompressed_size);
 
-    let mut out: Vec<u8> = Vec::with_capacity(table_directory.uncompressed_size);
+    // `totalSfntSize` is normally the exact size of the reconstructed font, which makes it the
+    // ideal starting capacity for the output buffer. But it is untrusted (and per spec an
+    // inaccurate value must not cause rejection), so only honour it as a capacity hint when it
+    // is plausible:
+    //   - It must not exceed the expected reconstructed size computed from the table directory
+    //     (output headers + the 4-byte-padded `origLength` of each table). This allows for the
+    //     data that exists outside the compressed stream (headers, reconstructed loca, glyf
+    //     expansion, padding) while rejecting arbitrary inflation. The `origLength` values are
+    //     themselves cross-checked against the reconstructed tables during reconstruction.
+    //   - It must also pass the same compression-ratio plausibility bound as the decompressed
+    //     size, so a font whose directory *and* `totalSfntSize` are inflated in tandem still
+    //     cannot force an allocation larger than 100x the input size.
+    // Otherwise fall back to the trusted (ratio-bounded) `uncompressed_size`.
+    let expected_sfnt_size: u64 = compute_header_size(&collection_directory, header.is_collection())
+        as u64
+        + table_directory
+            .iter()
+            .map(|table| Round4!(table.orig_length as u64))
+            .sum::<u64>();
+    let sfnt_size_ratio = (header.total_sfnt_size as f32) / (raw_woff_data.len() as f32);
+    let capacity_hint = if header.total_sfnt_size as u64 <= expected_sfnt_size
+        && sfnt_size_ratio <= K_MAX_PLAUSIBLE_COMPRESSION_RATIO
+    {
+        (header.total_sfnt_size as usize).max(table_directory.uncompressed_size)
+    } else {
+        table_directory.uncompressed_size
+    };
+    let mut out: Vec<u8> = Vec::with_capacity(capacity_hint);
 
     let mut out_header = generate_header(&header, &table_directory, &collection_directory);
     out.extend_from_slice(&out_header.data);

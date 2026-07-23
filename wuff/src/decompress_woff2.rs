@@ -139,12 +139,15 @@ pub fn decompress_woff2_with_custom_brotli(
     // Update header
     out[0..out_header.data.len()].copy_from_slice(&out_header.data);
 
-    // The output buffer's initial capacity (`uncompressed_size`) is the size of the transformed
-    // data block, which is typically smaller than the reconstructed font (transformed glyf is
-    // more compact than raw glyf + loca). Growing past the initial capacity leaves the Vec with
-    // up to ~2x excess capacity, so release the excess before handing the buffer to the caller,
-    // who may retain it for a long time.
-    out.shrink_to_fit();
+    // The capacity hint above can over-estimate (inflated `origLength`s), and if the buffer
+    // outgrew it the doubling growth strategy can leave up to ~2x excess capacity. The caller may
+    // retain the buffer for a long time, so release the excess if it is significant. Skip the
+    // shrink (which may reallocate and copy) when the excess is small, such as the few bytes by
+    // which the hint typically over-estimates the reconstructed glyf table.
+    const SHRINK_SLACK: usize = 1024;
+    if out.capacity() > out.len() + out.len() / 16 + SHRINK_SLACK {
+        out.shrink_to_fit();
+    }
 
     Ok(out)
 }

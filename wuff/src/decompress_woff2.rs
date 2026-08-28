@@ -278,7 +278,8 @@ fn reconstruct_font(
 
             // Generate transformed glyf and loca tables
             let raw_glyf_table_data = table.data_as_slice(woff_data)?;
-            let glyf_and_loca_data = tranform_glyf_table(raw_glyf_table_data)?;
+            let glyf_dest_offset = out.len();
+            let glyf_and_loca_data = tranform_glyf_table(raw_glyf_table_data, out)?;
 
             // The origLength of the loca table declared in the table directory must exactly
             // match the size of the reconstructed loca table.
@@ -292,14 +293,10 @@ fn reconstruct_font(
             num_glyphs = Some(glyf_and_loca_data.num_glyphs);
             x_mins = Some(glyf_and_loca_data.x_mins);
 
-            // Write glyf table
-            let glyf_dest_offset = out.len();
-            out.extend_from_slice(&glyf_and_loca_data.glyf_table);
-            out.resize(Round4!(out.len()), 0);
             let glyf_metadata = TableMetadata {
                 checksum: glyf_and_loca_data.glyf_checksum,
                 dst_offset: glyf_dest_offset as u32,
-                dst_length: glyf_and_loca_data.glyf_table.len() as u32,
+                dst_length: glyf_and_loca_data.glyf_table_len as u32,
             };
             table_metadata[table_idx] = Some(glyf_metadata);
 

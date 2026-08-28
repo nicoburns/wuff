@@ -19,8 +19,6 @@ const OVERLAP_SIMPLE: u8 = 1 << 6;
 
 const NUM_SUB_STREAMS: usize = 7;
 const FLAG_OVERLAP_SIMPLE_BITMAP: u16 = 1 << 0;
-// 98% of Google Fonts have no glyph above 5k bytes. Largest glyph ever observed was 72k bytes
-const DEFAULT_GLYPH_BUF_SIZE: usize = 5120;
 
 const FLAG_ARG_1_AND_2_ARE_WORDS: u16 = 1 << 0;
 const FLAG_WE_HAVE_A_SCALE: u16 = 1 << 3;
@@ -39,8 +37,8 @@ pub struct GlyfAndLocaData {
     pub index_format: u16,
     /// The x_min of the bounding box of each glyph. Used to reconstruct hmtx table
     pub x_mins: Vec<i16>,
-    /// Encoded Open Type "glyf" table
-    pub glyf_table: Vec<u8>,
+    /// Length of the encoded OpenType "glyf" table written to the output buffer
+    pub glyf_table_len: usize,
     /// Checksum for "glyf" table
     pub glyf_checksum: u32,
     /// Encoded Open Type "loca" table
@@ -52,8 +50,11 @@ pub struct GlyfAndLocaData {
 /// Decode a WOFF2 transformed glyf table
 ///
 /// <https://www.w3.org/TR/WOFF2/#glyf_table_format>
-pub(crate) fn tranform_glyf_table(data: &[u8]) -> Result<GlyfAndLocaData, WuffErr> {
-    GlyfDecoder::new(data)?.transform()
+pub(crate) fn tranform_glyf_table(
+    data: &[u8],
+    glyf_table: &mut Vec<u8>,
+) -> Result<GlyfAndLocaData, WuffErr> {
+    GlyfDecoder::new(data)?.transform(glyf_table)
 }
 
 pub struct GlyfDecoder<'a> {
@@ -67,7 +68,6 @@ pub struct GlyfDecoder<'a> {
     bbox_stream: &'a [u8],
     instruction_stream: &'a [u8],
     overlap_bitmap: Option<&'a [u8]>,
-    glyph_buf: Vec<u8>,
 
     // Output data
     num_glyphs: u16,
@@ -116,9 +116,6 @@ impl GlyfDecoder<'_> {
             overlap_bitmap = Some(&data[offset..(offset + (overlap_bitmap_length))]);
         }
 
-        // Scratch buffer to decode glyphs int.
-        let glyph_buf: Vec<u8> = Vec::with_capacity(DEFAULT_GLYPH_BUF_SIZE);
-
         Ok(GlyfDecoder {
             n_contour_stream,
             n_points_stream,
@@ -129,61 +126,64 @@ impl GlyfDecoder<'_> {
             bbox_stream,
             instruction_stream,
             overlap_bitmap,
-            glyph_buf,
             num_glyphs,
             index_format,
         })
     }
 
-    pub fn transform(mut self) -> Result<GlyfAndLocaData, WuffErr> {
+    pub fn transform(mut self, glyf_table: &mut Vec<u8>) -> Result<GlyfAndLocaData, WuffErr> {
         // Setup state
         let mut glyf_checksum: u32 = 0;
-        let mut glyf_table: Vec<u8> = Vec::with_capacity(self.num_glyphs as usize * 12);
+        let glyf_table_start = glyf_table.len();
         let mut loca_values: Vec<u32> = Vec::with_capacity(self.num_glyphs as usize + 1);
         let mut x_mins: Vec<i16> = vec![0; self.num_glyphs as usize];
 
         // Iterate over each glyph
         for i in 0..(self.num_glyphs as usize) {
-            loca_values.push(glyf_table.len() as u32);
+            loca_values.push((glyf_table.len() - glyf_table_start) as u32);
+            let glyph_start = glyf_table.len();
 
             let n_contours: u16 = self.n_contour_stream.try_get_u16()?;
             let glyph_has_bbox = (self.bbox_bitmap[i >> 3] & (0x80 >> (i & 7))) != 0;
 
-            self.glyph_buf.clear();
             if n_contours == 0xFFFF {
                 // composite glyphs must have an explicit bbox
                 bail_if!(!glyph_has_bbox);
-                self.parse_composite_glyph()?;
+                self.parse_composite_glyph(glyf_table)?;
             } else if n_contours > 0 {
                 // Note: while this look similar to the glyph_has_bbox code above, it's indexing into a different bitmap
                 let has_overlap_bit: bool = self
                     .overlap_bitmap
                     .is_some_and(|bitmap| (bitmap[i >> 3] & (0x80 >> (i & 7))) != 0);
-                self.parse_simple_glyph(n_contours, glyph_has_bbox, has_overlap_bit)?;
+                self.parse_simple_glyph(n_contours, glyph_has_bbox, has_overlap_bit, glyf_table)?;
             } else {
                 // n_contours == 0; empty glyph. Must NOT have a bbox.
                 bail_with_msg_if!(glyph_has_bbox, "Empty glyph has a bbox")
             }
 
-            glyf_checksum = glyf_checksum.wrapping_add(compute_checksum(&self.glyph_buf));
+            glyf_checksum =
+                glyf_checksum.wrapping_add(compute_checksum(&glyf_table[glyph_start..]));
 
-            // Write glyph to output table and pad output
-            //
-            // TODO(user) Old code aligned glyphs ... but do we actually need to?
-            // (definitely useful for loca)
-            glyf_table.extend_from_slice(&self.glyph_buf);
-            glyf_table.resize(Round4!(glyf_table.len()), 0);
-
-            // Read the x_min of the glyph in case we nede it to reconstruct 'hmtx'
+            // Read the x_min of the glyph in case we need it to reconstruct 'hmtx'.
             // The x_min value an i16 stored as bytes 2-4 in the glyph header.
             if n_contours > 0 {
-                let x_min = i16::from_be_bytes(self.glyph_buf[2..4].try_into().unwrap());
+                let x_min = i16::from_be_bytes(
+                    glyf_table[glyph_start + 2..glyph_start + 4]
+                        .try_into()
+                        .unwrap(),
+                );
                 x_mins[i] = x_min;
             }
+
+            // Preserve the existing four-byte glyph alignment.
+            // TODO(user): Could this use two-byte alignment for short `loca` and no
+            // per-glyph alignment for long `loca` without hurting performance?
+            glyf_table.resize(Round4!(glyf_table.len()), 0);
         }
 
         // loca[n] will be equal the length of the glyph data ('glyf') table
-        loca_values.push(glyf_table.len() as u32);
+        let glyf_table_len = glyf_table.len() - glyf_table_start;
+        loca_values.push(glyf_table_len as u32);
 
         // Generate loca table
         let (loca_table, loca_checksum) = generate_loca_table(&loca_values, self.index_format)?;
@@ -194,13 +194,12 @@ impl GlyfDecoder<'_> {
             x_mins,
             loca_table,
             loca_checksum,
-            glyf_table,
+            glyf_table_len,
             glyf_checksum,
         })
     }
 
-    /// Parse glyph data into `self.glyph_buf`
-    fn parse_composite_glyph(&mut self) -> Result<(), WuffErr> {
+    fn parse_composite_glyph(&mut self, glyf_table: &mut Vec<u8>) -> Result<(), WuffErr> {
         // Create a new iterator over the composite stream when computing the size so that we
         // we can "rewind" and copy the bytes counted here below.
         let mut ro_composite_stream = self.composite_stream;
@@ -213,24 +212,17 @@ impl GlyfDecoder<'_> {
             0
         };
 
-        let size_needed: usize = 12 + composite_size + (instruction_size as usize);
-        if size_needed > self.glyph_buf.capacity() {
-            self.glyph_buf
-                .reserve(size_needed - self.glyph_buf.capacity());
-        }
-
         let n_contours: i16 = -1; // All composite glyphs has n_contours = -1
-        self.glyph_buf.put_i16(n_contours);
+        glyf_table.put_i16(n_contours);
 
-        self.bbox_stream
-            .try_read_bytes_into(8, &mut self.glyph_buf)?;
+        self.bbox_stream.try_read_bytes_into(8, glyf_table)?;
         self.composite_stream
-            .try_read_bytes_into(composite_size, &mut self.glyph_buf)?;
+            .try_read_bytes_into(composite_size, glyf_table)?;
 
         if have_instructions {
-            self.glyph_buf.put_u16(instruction_size);
+            glyf_table.put_u16(instruction_size);
             self.instruction_stream
-                .try_read_bytes_into(instruction_size as usize, &mut self.glyph_buf)?;
+                .try_read_bytes_into(instruction_size as usize, glyf_table)?;
         }
 
         Ok(())
@@ -241,6 +233,7 @@ impl GlyfDecoder<'_> {
         n_contours: u16,
         glyph_has_bbox: bool,
         has_overlap_bit: bool,
+        glyf_table: &mut Vec<u8>,
     ) -> Result<(), WuffErr> {
         let n_contours = n_contours as usize;
 
@@ -271,38 +264,26 @@ impl GlyfDecoder<'_> {
         let instruction_size: u16 = self.glyph_stream.try_get_variable_255_u16()?;
         bail_if!(total_n_points >= (1 << 27) || instruction_size as u32 >= (1 << 30));
 
-        // Reserve needed size to reduce allocations
-        let size_needed: usize =
-            12 + 2 * n_contours + 5 * (total_n_points as usize) + (instruction_size as usize);
-        if self.glyph_buf.capacity() < size_needed {
-            self.glyph_buf
-                .reserve(size_needed - self.glyph_buf.capacity());
-        }
-
-        self.glyph_buf.put_i16(n_contours as i16);
+        glyf_table.put_i16(n_contours as i16);
 
         if glyph_has_bbox {
-            self.bbox_stream
-                .try_read_bytes_into(8, &mut self.glyph_buf)?;
+            self.bbox_stream.try_read_bytes_into(8, glyf_table)?;
         } else {
-            write_bbox(points.as_slice(), &mut self.glyph_buf);
+            write_bbox(points.as_slice(), glyf_table);
         }
-
-        // From this point, stop writing to the end of the glyph buffer and write to earlier in the buffer
-        // let mut writer = &mut÷ self.glyph_buf[END_PTS_OF_CONTOURS_OFFSET..];
 
         let mut end_point: i32 = -1;
         for countour in n_points_vec {
             end_point += countour as i32;
             bail_if!(end_point >= 65536);
-            self.glyph_buf.put_u16(end_point as u16);
+            glyf_table.put_u16(end_point as u16);
         }
 
-        self.glyph_buf.put_u16(instruction_size);
+        glyf_table.put_u16(instruction_size);
         self.instruction_stream
-            .try_read_bytes_into(instruction_size as usize, &mut self.glyph_buf)?;
+            .try_read_bytes_into(instruction_size as usize, glyf_table)?;
 
-        write_glyph_points(points.as_slice(), has_overlap_bit, &mut self.glyph_buf)?;
+        write_glyph_points(points.as_slice(), has_overlap_bit, glyf_table)?;
 
         Ok(())
     }

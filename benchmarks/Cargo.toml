@@ -1,0 +1,19 @@
+[package]
+name = "wuff-benchmarks"
+version = "0.0.0"
+publish = false
+license = "MIT"
+edition = "2024"
+rust-version = "1.85"
+
+[dependencies]
+wuff = { path = "../wuff" }
+
+[dev-dependencies]
+# Tango 0.7 alternates baseline and candidate in one process. Tango 0.8 moved
+# them to separate worker processes, which introduces measurable role bias on CI hosts.
+tango-bench = "0.7.2"
+
+[[bench]]
+name = "decompress_woff2"
+harness = false

@@ -68,6 +68,8 @@ pub struct GlyfDecoder<'a> {
     instruction_stream: &'a [u8],
     overlap_bitmap: Option<&'a [u8]>,
     glyph_buf: Vec<u8>,
+    n_points_buf: Vec<u16>,
+    points_buf: Vec<Point>,
 
     // Output data
     num_glyphs: u16,
@@ -130,6 +132,8 @@ impl GlyfDecoder<'_> {
             instruction_stream,
             overlap_bitmap,
             glyph_buf,
+            n_points_buf: Vec::new(),
+            points_buf: Vec::new(),
             num_glyphs,
             index_format,
         })
@@ -245,11 +249,12 @@ impl GlyfDecoder<'_> {
         let n_contours = n_contours as usize;
 
         // simple glyph
-        let mut n_points_vec: Vec<u16> = Vec::with_capacity(n_contours);
+        self.n_points_buf.clear();
+        self.n_points_buf.reserve(n_contours);
         let mut total_n_points: u32 = 0;
         for _ in 0..n_contours {
             let n_points_contour: u16 = self.n_points_stream.try_get_variable_255_u16()?;
-            n_points_vec.push(n_points_contour);
+            self.n_points_buf.push(n_points_contour);
             bail_if!(u32_will_overflow(total_n_points, n_points_contour as u32));
             total_n_points += n_points_contour as u32;
         }
@@ -261,9 +266,10 @@ impl GlyfDecoder<'_> {
 
         let mut triplet_bytes_consumed: usize = 0;
 
-        let mut points = Vec::with_capacity(total_n_points as usize);
+        self.points_buf.clear();
+        self.points_buf.reserve(total_n_points as usize);
         triplet_bytes_consumed +=
-            decode_triplet(&flags_buf[0..flag_size], triplet_buf, &mut points)?;
+            decode_triplet(&flags_buf[0..flag_size], triplet_buf, &mut self.points_buf)?;
 
         self.flag_stream.advance(flag_size);
         self.glyph_stream.advance(triplet_bytes_consumed); // FIXME: pass glyph_stream directly to decode_triplet instead?
@@ -285,15 +291,15 @@ impl GlyfDecoder<'_> {
             self.bbox_stream
                 .try_read_bytes_into(8, &mut self.glyph_buf)?;
         } else {
-            write_bbox(points.as_slice(), &mut self.glyph_buf);
+            write_bbox(self.points_buf.as_slice(), &mut self.glyph_buf);
         }
 
         // From this point, stop writing to the end of the glyph buffer and write to earlier in the buffer
         // let mut writer = &mut÷ self.glyph_buf[END_PTS_OF_CONTOURS_OFFSET..];
 
         let mut end_point: i32 = -1;
-        for countour in n_points_vec {
-            end_point += countour as i32;
+        for &contour_points in &self.n_points_buf {
+            end_point += contour_points as i32;
             bail_if!(end_point >= 65536);
             self.glyph_buf.put_u16(end_point as u16);
         }
@@ -302,7 +308,11 @@ impl GlyfDecoder<'_> {
         self.instruction_stream
             .try_read_bytes_into(instruction_size as usize, &mut self.glyph_buf)?;
 
-        write_glyph_points(points.as_slice(), has_overlap_bit, &mut self.glyph_buf)?;
+        write_glyph_points(
+            self.points_buf.as_slice(),
+            has_overlap_bit,
+            &mut self.glyph_buf,
+        )?;
 
         Ok(())
     }

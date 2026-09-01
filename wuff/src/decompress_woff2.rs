@@ -22,6 +22,10 @@ use crate::{
 // >100 suggests you wrote a bad uncompressed size.
 const K_MAX_PLAUSIBLE_COMPRESSION_RATIO: f32 = 100.0;
 
+// Absolute cap on the decompressed data and reconstructed font size (matches upstream woff2's
+// `kDefaultMaxSize`). The compression-ratio check alone permits huge outputs for large inputs.
+const MAX_OUTPUT_SIZE: usize = 128 * 1024 * 1024;
+
 #[allow(clippy::type_complexity)]
 /// Decompress a WOFF2 file using a custom brotli decompressor passed as a closure
 pub fn decompress_woff2_with_custom_brotli(
@@ -85,6 +89,7 @@ pub fn decompress_woff2_with_custom_brotli(
         "Implausible compression ratio {:.1}",
         compression_ratio
     );
+    bail_if!(table_directory.uncompressed_size > MAX_OUTPUT_SIZE);
 
     // Decompress data with brotli decoder. We pass the trusted `uncompressed_size` as the hard
     // upper bound on the size of the decompressed data.
@@ -97,7 +102,30 @@ pub fn decompress_woff2_with_custom_brotli(
     // <https://www.w3.org/TR/WOFF2/#conform-mustRejectExtraData>
     bail_if!(decompressed_data.len() != table_directory.uncompressed_size);
 
-    let mut out: Vec<u8> = Vec::with_capacity(table_directory.uncompressed_size);
+    // Output capacity hint. `totalSfntSize` is exact for a well-formed font but untrusted, so
+    // only use it if it is bounded by the directory-derived size (headers + padded `origLength`s,
+    // a slight over-estimate for conformant fonts), falling back to that size otherwise. Both are
+    // clamped to the compression-ratio limit and `MAX_OUTPUT_SIZE` since `origLength` is also
+    // attacker-controlled.
+    let expected_sfnt_size: u64 = compute_header_size(&collection_directory, header.is_collection())
+        as u64
+        + table_directory
+            .iter()
+            .map(|table| Round4!(table.orig_length as u64))
+            .sum::<u64>();
+    let total_sfnt_size = header.total_sfnt_size as u64;
+    let sfnt_size_is_plausible = total_sfnt_size <= expected_sfnt_size
+        && total_sfnt_size >= table_directory.uncompressed_size as u64;
+    let max_plausible_size =
+        (K_MAX_PLAUSIBLE_COMPRESSION_RATIO as u64).saturating_mul(raw_woff_data.len() as u64);
+    let capacity_hint = if sfnt_size_is_plausible {
+        total_sfnt_size
+    } else {
+        expected_sfnt_size
+    }
+    .min(max_plausible_size)
+    .min(MAX_OUTPUT_SIZE as u64) as usize;
+    let mut out: Vec<u8> = Vec::with_capacity(capacity_hint);
 
     let mut out_header = generate_header(&header, &table_directory, &collection_directory);
     out.extend_from_slice(&out_header.data);
@@ -117,8 +145,19 @@ pub fn decompress_woff2_with_custom_brotli(
         )?;
     }
 
+    bail_if!(out.len() > MAX_OUTPUT_SIZE);
+
     // Update header
     out[0..out_header.data.len()].copy_from_slice(&out_header.data);
+
+    // The hint may over-estimate (the directory-derived fallback is a slight over-estimate, and an
+    // inflated `origLength` can make it a large one), or the buffer may have outgrown it (leaving
+    // up to ~2x excess). Callers tend to retain the buffer, so shrink it if the excess is
+    // significant.
+    const SHRINK_SLACK: usize = 1024;
+    if out.capacity() > out.len() + out.len() / 16 + SHRINK_SLACK {
+        out.shrink_to_fit();
+    }
 
     Ok(out)
 }

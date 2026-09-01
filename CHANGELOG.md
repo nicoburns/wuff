@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+- Fix a memory-usage regression introduced in 0.2.7: the WOFF2 output buffer could retain up to
+  ~2x its final size in unused capacity. It is now shrunk to fit before being returned.
+- Reject WOFF2 fonts whose decompressed data or reconstructed output exceeds 128 MiB (matching
+  upstream woff2's default limit).
+
 ## 0.2.8
 - Remove `arrayvec` dependency
 

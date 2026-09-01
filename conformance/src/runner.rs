@@ -395,8 +395,9 @@ pub fn run_and_report(
         counts[category_index(outcome)] += 1;
         writeln!(report, "{}: {}: {}", category, rel.display(), details).unwrap();
     }
-    let report_path = data_dir.join("report.txt").canonicalize().unwrap();
+    let report_path = data_dir.join("report.txt");
     fs::write(&report_path, &report).expect("failed to write report");
+    let report_path = report_path.canonicalize().unwrap();
 
     let [
         encode_fail,

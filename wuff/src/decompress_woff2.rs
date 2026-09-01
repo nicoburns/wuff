@@ -141,8 +141,10 @@ pub fn decompress_woff2_with_custom_brotli(
     // Update header
     out[0..out_header.data.len()].copy_from_slice(&out_header.data);
 
-    // The hint may over-estimate, or the buffer may have outgrown it (leaving up to ~2x excess).
-    // Callers tend to retain the buffer, so shrink it if the excess is significant.
+    // The hint may over-estimate (the directory-derived fallback is a slight over-estimate, and an
+    // inflated `origLength` can make it a large one), or the buffer may have outgrown it (leaving
+    // up to ~2x excess). Callers tend to retain the buffer, so shrink it if the excess is
+    // significant.
     const SHRINK_SLACK: usize = 1024;
     if out.capacity() > out.len() + out.len() / 16 + SHRINK_SLACK {
         out.shrink_to_fit();

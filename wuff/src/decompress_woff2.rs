@@ -22,6 +22,10 @@ use crate::{
 // >100 suggests you wrote a bad uncompressed size.
 const K_MAX_PLAUSIBLE_COMPRESSION_RATIO: f32 = 100.0;
 
+// Absolute cap on the decompressed data and reconstructed font size (matches upstream woff2's
+// `kDefaultMaxSize`). The compression-ratio check alone permits huge outputs for large inputs.
+const MAX_OUTPUT_SIZE: usize = 128 * 1024 * 1024;
+
 #[allow(clippy::type_complexity)]
 /// Decompress a WOFF2 file using a custom brotli decompressor passed as a closure
 pub fn decompress_woff2_with_custom_brotli(
@@ -85,6 +89,7 @@ pub fn decompress_woff2_with_custom_brotli(
         "Implausible compression ratio {:.1}",
         compression_ratio
     );
+    bail_if!(table_directory.uncompressed_size > MAX_OUTPUT_SIZE);
 
     // Decompress data with brotli decoder. We pass the trusted `uncompressed_size` as the hard
     // upper bound on the size of the decompressed data.
@@ -100,7 +105,8 @@ pub fn decompress_woff2_with_custom_brotli(
     // Output capacity hint. `totalSfntSize` is exact for a well-formed font but untrusted, so
     // only use it if it is bounded by the directory-derived size (headers + padded `origLength`s,
     // a slight over-estimate for conformant fonts), falling back to that size otherwise. Both are
-    // clamped to the compression-ratio limit since `origLength` is also attacker-controlled.
+    // clamped to the compression-ratio limit and `MAX_OUTPUT_SIZE` since `origLength` is also
+    // attacker-controlled.
     let expected_sfnt_size: u64 = compute_header_size(&collection_directory, header.is_collection())
         as u64
         + table_directory
@@ -117,7 +123,8 @@ pub fn decompress_woff2_with_custom_brotli(
     } else {
         expected_sfnt_size
     }
-    .min(max_plausible_size) as usize;
+    .min(max_plausible_size)
+    .min(MAX_OUTPUT_SIZE as u64) as usize;
     let mut out: Vec<u8> = Vec::with_capacity(capacity_hint);
 
     let mut out_header = generate_header(&header, &table_directory, &collection_directory);
@@ -137,6 +144,8 @@ pub fn decompress_woff2_with_custom_brotli(
             i,
         )?;
     }
+
+    bail_if!(out.len() > MAX_OUTPUT_SIZE);
 
     // Update header
     out[0..out_header.data.len()].copy_from_slice(&out_header.data);

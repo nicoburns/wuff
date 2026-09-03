@@ -6,6 +6,10 @@ publish = false
 edition = "2024"
 rust-version = "1.85"
 
+[features]
+# Run the suite with wuff's `brotli-c` backend (Google's C decoder) instead of the pure-Rust one.
+brotli-c = ["wuff/brotli-c", "wuff-capi/brotli-c"]
+
 [dependencies]
 wuff = { path = "../wuff", default-features = false, features = ["brotli"] }
 wuff-capi = { path = "../wuff-capi" }

@@ -30,6 +30,8 @@ jobs:
         run: rustup toolchain install stable --profile minimal --component clippy --no-self-update
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: cargo clippy (brotli-c)
+        run: cargo clippy -p wuff --no-default-features --features brotli-c,z --all-targets -- -D warnings
 
   # Basic compile check of the whole workspace on stable.
   check:
@@ -43,6 +45,8 @@ jobs:
         run: cargo check --workspace --all-targets
       - name: cargo check (no default features)
         run: cargo check -p wuff --no-default-features
+      - name: cargo check (brotli-c)
+        run: cargo check --workspace --all-targets --features wuff/brotli-c
 
   # Verify the crate still builds on its declared MSRV (see `rust-version` in
   # the Cargo.toml files; keep this in sync).
@@ -71,3 +75,41 @@ jobs:
         run: cargo check -p wuff --no-default-features --target thumbv7em-none-eabi
       - name: cargo check (brotli, no_std)
         run: cargo check -p wuff --no-default-features --features brotli --target thumbv7em-none-eabi
+
+  # Verify the C Brotli backend builds and links for wasm-bindgen's target. There is no libc on
+  # `wasm32-unknown-unknown`, so this exercises the libc shims in `wuff/csrc/wasm-libc-shim`.
+  # `cargo check` only compiles the C code; building a cdylib is what actually links it.
+  wasm:
+    name: brotli-c (wasm32-unknown-unknown)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable toolchain with wasm target
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup target add wasm32-unknown-unknown
+      - name: cargo build (brotli-c, wasm32-unknown-unknown)
+        run: cargo build -p wuff --no-default-features --features brotli-c --target wasm32-unknown-unknown
+      - name: link a cdylib against the C decoder
+        run: |
+          mkdir -p /tmp/wasm-link/src
+          cat > /tmp/wasm-link/Cargo.toml <<'TOML'
+          [package]
+          name = "wasm-link"
+          version = "0.0.0"
+          edition = "2024"
+          publish = false
+          [lib]
+          crate-type = ["cdylib"]
+          [dependencies]
+          wuff = { path = "${{ github.workspace }}/wuff", default-features = false, features = ["brotli-c"] }
+          [workspace]
+          TOML
+          cat > /tmp/wasm-link/src/lib.rs <<'RS'
+          #[unsafe(no_mangle)]
+          pub extern "C" fn wuff_wasm_link_check(ptr: *const u8, len: usize) -> usize {
+              let data = unsafe { core::slice::from_raw_parts(ptr, len) };
+              wuff::decompress_woff2(data).map(|v| v.len()).unwrap_or(0)
+          }
+          RS
+          cargo build --manifest-path /tmp/wasm-link/Cargo.toml --release --target wasm32-unknown-unknown

@@ -8,7 +8,7 @@
 
 extern crate alloc;
 
-#[cfg(feature = "brotli")]
+#[cfg(any(feature = "brotli", feature = "brotli-c"))]
 mod brotli;
 mod decompress_woff1;
 mod decompress_woff2;
@@ -26,8 +26,8 @@ pub use error::WuffErr;
 #[cfg_attr(docsrs, doc(cfg(feature = "z")))]
 pub use decompress_woff1::decompress_woff1;
 
-#[cfg(feature = "brotli")]
-#[cfg_attr(docsrs, doc(cfg(feature = "brotli")))]
+#[cfg(any(feature = "brotli", feature = "brotli-c"))]
+#[cfg_attr(docsrs, doc(cfg(any(feature = "brotli", feature = "brotli-c"))))]
 pub use brotli::decompress_woff2;
 
 const HEAD: Tag = Tag::new(b"head");

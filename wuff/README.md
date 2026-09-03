@@ -63,11 +63,36 @@ A matching `decompress_woff1_with_custom_z` is available for WOFF1.
 
 ## Feature flags
 
-- `brotli` *(default)* — bundle a Brotli backend for WOFF2 decoding (`decompress_woff2`).
+- `brotli` *(default)* — bundle the pure-Rust [`brotli-decompressor`](https://crates.io/crates/brotli-decompressor)
+  crate as the Brotli backend for WOFF2 decoding (`decompress_woff2`).
+- `brotli-c` — use Google's reference C Brotli decoder ([google/brotli](https://github.com/google/brotli),
+  vendored in the crate) as the backend for `decompress_woff2` instead. Takes precedence over
+  `brotli` if both are enabled; disable default features to avoid compiling both.
 - `z` *(default)* — bundle a zlib backend for WOFF1 decoding (`decompress_woff1`).
 
 Disable default features to bring your own decompressors via the
 `decompress_woff2_with_custom_brotli` / `decompress_woff1_with_custom_z` entry points.
+
+### The `brotli-c` backend
+
+```toml
+[dependencies]
+wuff = { version = "0.2", default-features = false, features = ["brotli-c", "z"] }
+```
+
+The C sources are compiled by the crate's build script with the [`cc`](https://crates.io/crates/cc)
+crate, so a C compiler must be available at build time (`CC`/`CFLAGS` are honoured as usual).
+The decoder is linked statically and produces byte-identical output to the Rust backend.
+
+The backend supports `wasm32-unknown-unknown`, including through
+[wasm-bindgen](https://rustwasm.github.io/wasm-bindgen/). That target has no libc, so `clang`
+(the C compiler that targets wasm) must be installed; the build script supplies the few libc
+declarations Brotli needs and routes its `malloc`/`free` calls to Rust's global allocator, so
+the resulting module has no `env` imports.
+
+Because the backend bundles its own copy of the Brotli decoder, don't combine it with another
+statically linked `libbrotlidec` (e.g. a `-sys` crate for Brotli) in the same binary, or the
+linker will see duplicate symbols.
 
 ## About this repository
 

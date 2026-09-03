@@ -1,14 +1,14 @@
 //! Built-in WOFF2 Brotli decompression, backed by `brotli-decompressor`.
 //!
-//! This module is only compiled when the `brotli` feature is enabled. It plugs the
-//! `brotli-decompressor` crate into [`decompress_woff2_with_custom_brotli`](crate::decompress_woff2_with_custom_brotli)
-//! using an `alloc`-backed allocator, so it works on `no_std` targets (with a global allocator).
+//! This module is only compiled when the `brotli` feature is enabled (and `brotli-c` is not). It
+//! plugs the `brotli-decompressor` crate into
+//! [`decompress_woff2_with_custom_brotli`](crate::decompress_woff2_with_custom_brotli) using an
+//! `alloc`-backed allocator, so it works on `no_std` targets (with a global allocator).
 
 use alloc::{boxed::Box, vec, vec::Vec};
 use core::error::Error;
 
 use crate::WuffErr;
-use crate::decompress_woff2_with_custom_brotli;
 
 /// A `Box<[T]>` wrapper implementing the allocation traits that `brotli-decompressor`
 /// requires, so the decoder can allocate through the global allocator (`alloc`) rather
@@ -45,7 +45,7 @@ impl<T: Clone + Default> brotli_decompressor::Allocator<T> for HeapAlloc {
     fn free_cell(&mut self, _data: Rebox<T>) {}
 }
 
-fn decompress_brotli(
+pub(super) fn decompress_brotli(
     compressed_data: &[u8],
     expected_size: usize,
 ) -> Result<Vec<u8>, Box<dyn Error>> {
@@ -84,9 +84,4 @@ fn decompress_brotli(
     }
 
     Ok(output)
-}
-
-/// Decompress a WOFF2 file using the built-in brotli decompressor
-pub fn decompress_woff2(raw_woff_data: &[u8]) -> Result<Vec<u8>, WuffErr> {
-    decompress_woff2_with_custom_brotli(raw_woff_data, &mut decompress_brotli)
 }

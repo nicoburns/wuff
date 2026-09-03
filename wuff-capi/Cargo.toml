@@ -20,5 +20,10 @@ include = [
     "include/*",
 ]
 
+[features]
+# Use Google's reference C Brotli decoder instead of the pure-Rust one. See the `brotli-c`
+# feature of the `wuff` crate.
+brotli-c = ["wuff/brotli-c"]
+
 [dependencies]
 wuff = { version = "0.2.7", path = "../wuff", default-features = false, features = ["brotli"] }

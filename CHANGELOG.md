@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+- Add a `brotli-c` feature that uses Google's reference C Brotli decoder
+  ([google/brotli](https://github.com/google/brotli) v1.2.0, vendored) as the backend for
+  `decompress_woff2` instead of the pure-Rust `brotli-decompressor` crate. The C sources are
+  compiled by a build script, including for `wasm32-unknown-unknown` / wasm-bindgen (requires
+  `clang`), where the decoder's `malloc`/`free` are routed to Rust's global allocator.
+  `wuff-capi` and the conformance harness gain matching passthrough features.
+
 ## 0.2.9
 - Fix a memory-usage regression introduced in 0.2.7: the WOFF2 output buffer could retain up to
   ~2x its final size in unused capacity. It is now shrunk to fit before being returned.

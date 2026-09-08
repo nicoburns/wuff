@@ -1,8 +1,15 @@
-//! Built-in WOFF2 Brotli decompression, backed by `brotli-decompressor`.
+//! Built-in WOFF2 Brotli decompression.
 //!
-//! This module is only compiled when the `brotli` feature is enabled. It plugs the
-//! `brotli-decompressor` crate into [`decompress_woff2_with_custom_brotli`](crate::decompress_woff2_with_custom_brotli)
-//! using an `alloc`-backed allocator, so it works on `no_std` targets (with a global allocator).
+//! This module is compiled when the `brotli` or `brotli-c` feature is enabled and
+//! plugs a decompressor into [`decompress_woff2_with_custom_brotli`](crate::decompress_woff2_with_custom_brotli):
+//!
+//! - `brotli`: the pure-Rust `brotli-decompressor` crate, driven with an
+//!   `alloc`-backed allocator so it works on `no_std` targets (with a global
+//!   allocator). `brotli-unsafe` switches this backend to `brotli-decompressor`'s
+//!   faster unchecked implementation (std-only).
+//! - `brotli-c`: Google's C brotli library via the `brotlic` crate. Faster, but
+//!   requires a C toolchain and is not no_std-compatible. Takes precedence over
+//!   `brotli` when both features are enabled.
 
 use alloc::{boxed::Box, vec, vec::Vec};
 use core::error::Error;
@@ -14,20 +21,24 @@ use crate::decompress_woff2_with_custom_brotli;
 /// requires, so the decoder can allocate through the global allocator (`alloc`) rather
 /// than depending on `std`. This is the no_std equivalent of the crate's built-in
 /// `StandardAlloc` (which is only available behind its `std` feature).
+#[cfg(all(feature = "brotli", not(feature = "brotli-c")))]
 struct Rebox<T>(Box<[T]>);
 
+#[cfg(all(feature = "brotli", not(feature = "brotli-c")))]
 impl<T> Default for Rebox<T> {
     fn default() -> Self {
         Rebox(Vec::new().into_boxed_slice())
     }
 }
 
+#[cfg(all(feature = "brotli", not(feature = "brotli-c")))]
 impl<T> brotli_decompressor::SliceWrapper<T> for Rebox<T> {
     fn slice(&self) -> &[T] {
         &self.0
     }
 }
 
+#[cfg(all(feature = "brotli", not(feature = "brotli-c")))]
 impl<T> brotli_decompressor::SliceWrapperMut<T> for Rebox<T> {
     fn slice_mut(&mut self) -> &mut [T] {
         &mut self.0
@@ -35,8 +46,10 @@ impl<T> brotli_decompressor::SliceWrapperMut<T> for Rebox<T> {
 }
 
 /// Zero-sized allocator handing out `Rebox` cells backed by the global allocator.
+#[cfg(all(feature = "brotli", not(feature = "brotli-c")))]
 struct HeapAlloc;
 
+#[cfg(all(feature = "brotli", not(feature = "brotli-c")))]
 impl<T: Clone + Default> brotli_decompressor::Allocator<T> for HeapAlloc {
     type AllocatedMemory = Rebox<T>;
     fn alloc_cell(&mut self, len: usize) -> Rebox<T> {
@@ -45,6 +58,7 @@ impl<T: Clone + Default> brotli_decompressor::Allocator<T> for HeapAlloc {
     fn free_cell(&mut self, _data: Rebox<T>) {}
 }
 
+#[cfg(all(feature = "brotli", not(feature = "brotli-c")))]
 fn decompress_brotli(
     compressed_data: &[u8],
     expected_size: usize,
@@ -80,6 +94,33 @@ fn decompress_brotli(
     // padding bytes (up to 3, counted in `totalCompressedSize`) are harmless: the decoder reports
     // success at end-of-stream and simply leaves them unconsumed in the input.
     if !matches!(result, BrotliResult::ResultSuccess) || output_offset != expected_size {
+        return Err(Box::new(WuffErr::GenericError));
+    }
+
+    Ok(output)
+}
+
+/// Brotli decompression via Google's C implementation (the `brotlic` crate).
+#[cfg(feature = "brotli-c")]
+fn decompress_brotli(
+    compressed_data: &[u8],
+    expected_size: usize,
+) -> Result<Vec<u8>, Box<dyn Error>> {
+    use brotlic::decode::{BrotliDecoder, DecoderInfo};
+
+    // Allocate the output buffer once, up front, at exactly the (trusted) expected size.
+    // The decoder never writes past the end of the slice, so `expected_size` is a hard
+    // upper bound: a stream that would expand further reports `NeedsMoreOutput` rather
+    // than driving an unbounded allocation.
+    let mut output = vec![0u8; expected_size];
+    let result = BrotliDecoder::new()
+        .decompress(compressed_data, &mut output)
+        .map_err(|_| WuffErr::GenericError)?;
+
+    // Require a clean end-of-stream producing exactly `expected_size` bytes. Any trailing
+    // WOFF2 padding bytes (up to 3, counted in `totalCompressedSize`) are harmless: the
+    // decoder reports `Finished` at end-of-stream and simply leaves them unconsumed.
+    if !matches!(result.info, DecoderInfo::Finished) || result.bytes_written != expected_size {
         return Err(Box::new(WuffErr::GenericError));
     }
 

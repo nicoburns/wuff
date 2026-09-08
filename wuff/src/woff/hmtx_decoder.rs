@@ -4,24 +4,17 @@ use bytes::{Buf, BufMut};
 
 use crate::error::{WuffErr, bail_if, bail_with_msg_if};
 
-/// Data decoded from the WOFF2 hmtx table which can be used to reconstruct
-/// an open type hmtx table.
-pub struct HmtxData {
-    num_glyphs: u16,
-    num_hmetrics: u16,
-    advance_widths: Vec<u16>,
-    lsbs: Vec<i16>,
-}
-
-/// Decode a WOFF2 transformed hmtx table
+/// Decode a WOFF2 transformed hmtx table, appending the reconstructed OpenType
+/// hmtx table to `out`.
 ///
 /// <http://dev.w3.org/webfonts/WOFF2/spec/Overview.html#hmtx_table_format>
 pub(crate) fn decode_hmtx_table(
-    input: &mut impl Buf,
+    mut input: &[u8],
     num_glyphs: u16,
     num_hmetrics: u16,
     x_mins: &[i16],
-) -> Result<HmtxData, WuffErr> {
+    out: &mut Vec<u8>,
+) -> Result<(), WuffErr> {
     // Decode flags
     let hmtx_flags: u8 = input.try_get_u8()?;
     let has_proportional_lsbs: bool = (hmtx_flags & 1) == 0;
@@ -47,48 +40,54 @@ pub(crate) fn decode_hmtx_table(
     // <https://www.microsoft.com/typography/otspec/hmtx.htm>
     bail_if!(num_hmetrics < 1);
 
-    // Read advance widths
-    let mut advance_widths: Vec<u16> = Vec::with_capacity(num_hmetrics as usize);
-    for _ in 0..num_hmetrics {
-        advance_widths.push(input.try_get_u16()?);
-    }
+    // Validate the input length up front so the loops below can read without
+    // per-element error handling.
+    let proportional_lsb_bytes = if has_proportional_lsbs {
+        2 * num_hmetrics as usize
+    } else {
+        0
+    };
+    let monospace_lsb_bytes = if has_monospace_lsbs {
+        2 * (num_glyphs - num_hmetrics) as usize
+    } else {
+        0
+    };
+    let required = 2 * num_hmetrics as usize + proportional_lsb_bytes + monospace_lsb_bytes;
+    bail_if!(input.remaining() < required);
 
-    // Read lsb (proportional) and leftSideBearing (monospace) values into the same Vec
-    let mut lsbs: Vec<i16> = Vec::with_capacity(num_glyphs as usize);
-    for i in 0..num_hmetrics {
-        lsbs.push(match has_proportional_lsbs {
-            true => input.try_get_i16()?,
-            false => x_mins[i as usize],
-        });
-    }
-    for i in num_hmetrics..num_glyphs {
-        lsbs.push(match has_monospace_lsbs {
-            true => input.try_get_i16()?,
-            false => x_mins[i as usize],
-        });
-    }
+    // The advance widths come first in the encoded table
+    let advance_widths = &input[..2 * num_hmetrics as usize];
+    input.advance(2 * num_hmetrics as usize);
 
-    Ok(HmtxData {
-        num_glyphs,
-        num_hmetrics,
-        advance_widths,
-        lsbs,
-    })
-}
+    // Then the proportional lsbs (if present), then the monospace lsbs (if present)
+    let proportional_lsbs = &input[..proportional_lsb_bytes];
+    input.advance(proportional_lsb_bytes);
+    let monospace_lsbs = &input[..monospace_lsb_bytes];
 
-/// bake me a shiny new hmtx table
-pub(crate) fn generate_hmtx_table(hmtx_data: &HmtxData) -> Result<Vec<u8>, WuffErr> {
-    let num_glyphs = hmtx_data.num_glyphs as usize;
-    let num_hmetrics = hmtx_data.num_hmetrics as usize;
+    // Reserve output capacity: 2 * num_glyphs (lsbs) + 2 * num_hmetrics (advance widths)
+    out.reserve(2 * num_glyphs as usize + 2 * num_hmetrics as usize);
 
-    let hmtx_output_size: usize = 2 * num_glyphs + 2 * num_hmetrics;
-    let mut hmtx_table: Vec<u8> = Vec::with_capacity(hmtx_output_size);
-    for i in 0..num_glyphs {
-        if i < num_hmetrics {
-            hmtx_table.put_u16(hmtx_data.advance_widths[i]);
+    // Proportional glyphs: advance width + lsb
+    for i in 0..num_hmetrics as usize {
+        out.extend_from_slice(&advance_widths[2 * i..2 * i + 2]);
+        if has_proportional_lsbs {
+            out.extend_from_slice(&proportional_lsbs[2 * i..2 * i + 2]);
+        } else {
+            out.put_i16(x_mins[i]);
         }
-        hmtx_table.put_i16(hmtx_data.lsbs[i]);
     }
 
-    Ok(hmtx_table)
+    // Monospace glyphs: lsb only
+    for (j, &x_min) in x_mins[num_hmetrics as usize..num_glyphs as usize]
+        .iter()
+        .enumerate()
+    {
+        if has_monospace_lsbs {
+            out.extend_from_slice(&monospace_lsbs[2 * j..2 * j + 2]);
+        } else {
+            out.put_i16(x_min);
+        }
+    }
+
+    Ok(())
 }

@@ -32,6 +32,12 @@ brotli = ["dep:brotli-decompressor"]
 # dependency. NOTE: this feature is NOT no_std-compatible (it transitively
 # enables `alloc-stdlib`, which requires std).
 brotli-unsafe = ["brotli", "brotli-decompressor/std", "brotli-decompressor/unsafe"]
+# Uses Google's C brotli library (via the `brotlic` crate) as the built-in WOFF2
+# decompressor instead of the pure-Rust `brotli-decompressor`. ~20-30% faster
+# brotli decompression, but requires a C toolchain at build time and links
+# non-Rust code. Takes precedence over `brotli`/`brotli-unsafe` when enabled
+# together.
+brotli-c = ["dep:brotlic"]
 z = ["dep:flate2"]
 font_compression_bin = []
 debug = []
@@ -41,6 +47,9 @@ bytes = { version = "1.10.1", default-features = false }
 # `brotli` is no_std-compatible: we drive `brotli-decompressor` with our own
 # `alloc`-backed allocator, so its `std` default feature is disabled.
 brotli-decompressor = { version = "5.0.0", optional = true, default-features = false }
+# `brotlic` (the `brotli-c` feature) binds Google's C brotli implementation. It
+# requires a C toolchain and is not no_std-compatible.
+brotlic = { version = "0.8", optional = true }
 # `flate2` (the `z` feature) is std-only, so this feature cannot be built for
 # no_std targets. no_std users can supply their own decompressor via
 # `decompress_woff1_with_custom_z`.

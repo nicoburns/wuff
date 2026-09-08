@@ -26,6 +26,12 @@ required-features = ["brotli", "z"]
 [features]
 default = ["brotli", "z"]
 brotli = ["dep:brotli-decompressor"]
+# Enables `brotli-decompressor`'s `unsafe` feature, which removes array bounds
+# checks and buffer initialization inside the decoder (the public API stays
+# safe). ~5-10% faster WOFF2 decompression at the cost of unsafe code in the
+# dependency. NOTE: this feature is NOT no_std-compatible (it transitively
+# enables `alloc-stdlib`, which requires std).
+brotli-unsafe = ["brotli", "brotli-decompressor/std", "brotli-decompressor/unsafe"]
 z = ["dep:flate2"]
 font_compression_bin = []
 debug = []

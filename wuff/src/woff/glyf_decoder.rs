@@ -32,28 +32,38 @@ const FLAG_WE_HAVE_INSTRUCTIONS: u16 = 1 << 8;
 const END_PTS_OF_CONTOURS_OFFSET: usize = 10;
 const COMPOSITE_GLYPH_BEGIN: usize = 10;
 
+/// The bounding box of a glyph's points (in font design units).
+#[derive(Clone, Copy, Default)]
+struct Bbox {
+    x_min: i32,
+    y_min: i32,
+    x_max: i32,
+    y_max: i32,
+}
+
 pub struct GlyfAndLocaData {
     /// The number of glyphs in the glyf table
     pub num_glyphs: u16,
-    /// loca index format
-    pub index_format: u16,
-    /// The x_min of the bounding box of each glyph. Used to reconstruct hmtx table
-    pub x_mins: Vec<i16>,
-    /// Encoded Open Type "glyf" table
-    pub glyf_table: Vec<u8>,
+    /// The number of bytes written for the 'glyf' table (excluding padding)
+    pub glyf_len: usize,
     /// Checksum for "glyf" table
     pub glyf_checksum: u32,
-    /// Encoded Open Type "loca" table
-    pub loca_table: Vec<u8>,
+    /// The number of bytes written for the 'loca' table (excluding padding)
+    pub loca_len: usize,
     /// Checksum for "loca" table
     pub loca_checksum: u32,
+    /// The x_min of the bounding box of each glyph. Used to reconstruct hmtx table
+    pub x_mins: Vec<i16>,
 }
 
 /// Decode a WOFF2 transformed glyf table
 ///
 /// <https://www.w3.org/TR/WOFF2/#glyf_table_format>
-pub(crate) fn tranform_glyf_table(data: &[u8]) -> Result<GlyfAndLocaData, WuffErr> {
-    GlyfDecoder::new(data)?.transform()
+pub(crate) fn tranform_glyf_table(
+    data: &[u8],
+    out: &mut Vec<u8>,
+) -> Result<GlyfAndLocaData, WuffErr> {
+    GlyfDecoder::new(data)?.transform(out)
 }
 
 pub struct GlyfDecoder<'a> {
@@ -87,7 +97,7 @@ impl GlyfDecoder<'_> {
         bail_if!(offset > data.len());
 
         // Invariant from here on: data_size >= offset
-        let mut read_stream = || {
+        let mut read_stream = || -> Result<&[u8], WuffErr> {
             let substream_size: usize = input.try_get_u32()? as usize;
             bail_if!(substream_size > data.len() - offset);
             let substream_range = offset..(offset + substream_size);
@@ -135,16 +145,18 @@ impl GlyfDecoder<'_> {
         })
     }
 
-    pub fn transform(mut self) -> Result<GlyfAndLocaData, WuffErr> {
-        // Setup state
-        let mut glyf_checksum: u32 = 0;
-        let mut glyf_table: Vec<u8> = Vec::with_capacity(self.num_glyphs as usize * 12);
+    pub fn transform(mut self, out: &mut Vec<u8>) -> Result<GlyfAndLocaData, WuffErr> {
+        let glyf_start = out.len();
         let mut loca_values: Vec<u32> = Vec::with_capacity(self.num_glyphs as usize + 1);
         let mut x_mins: Vec<i16> = vec![0; self.num_glyphs as usize];
 
+        // Scratch buffers reused across glyphs to avoid allocating per glyph
+        let mut points: Vec<Point> = Vec::new();
+        let mut n_points: Vec<u16> = Vec::new();
+
         // Iterate over each glyph
         for i in 0..(self.num_glyphs as usize) {
-            loca_values.push(glyf_table.len() as u32);
+            loca_values.push((out.len() - glyf_start) as u32);
 
             let n_contours: u16 = self.n_contour_stream.try_get_u16()?;
             let glyph_has_bbox = (self.bbox_bitmap[i >> 3] & (0x80 >> (i & 7))) != 0;
@@ -159,20 +171,21 @@ impl GlyfDecoder<'_> {
                 let has_overlap_bit: bool = self
                     .overlap_bitmap
                     .is_some_and(|bitmap| (bitmap[i >> 3] & (0x80 >> (i & 7))) != 0);
-                self.parse_simple_glyph(n_contours, glyph_has_bbox, has_overlap_bit)?;
+                self.parse_simple_glyph(
+                    n_contours,
+                    glyph_has_bbox,
+                    has_overlap_bit,
+                    &mut points,
+                    &mut n_points,
+                )?;
             } else {
                 // n_contours == 0; empty glyph. Must NOT have a bbox.
                 bail_with_msg_if!(glyph_has_bbox, "Empty glyph has a bbox")
             }
 
-            glyf_checksum = glyf_checksum.wrapping_add(compute_checksum(&self.glyph_buf));
-
-            // Write glyph to output table and pad output
-            //
-            // TODO(user) Old code aligned glyphs ... but do we actually need to?
-            // (definitely useful for loca)
-            glyf_table.extend_from_slice(&self.glyph_buf);
-            glyf_table.resize(Round4!(glyf_table.len()), 0);
+            // Copy the glyph into the output table and pad to a 4-byte boundary
+            out.extend_from_slice(&self.glyph_buf);
+            out.resize(Round4!(out.len()), 0);
 
             // Read the x_min of the glyph in case we nede it to reconstruct 'hmtx'
             // The x_min value an i16 stored as bytes 2-4 in the glyph header.
@@ -183,19 +196,42 @@ impl GlyfDecoder<'_> {
         }
 
         // loca[n] will be equal the length of the glyph data ('glyf') table
-        loca_values.push(glyf_table.len() as u32);
+        loca_values.push((out.len() - glyf_start) as u32);
+        let glyf_len = out.len() - glyf_start;
 
-        // Generate loca table
-        let (loca_table, loca_checksum) = generate_loca_table(&loca_values, self.index_format)?;
+        // The per-glyph padding is zeroed, so checksumming the whole region is
+        // equivalent to summing the per-glyph checksums.
+        let glyf_checksum = compute_checksum(&out[glyf_start..]);
+
+        // Generate loca table directly into the output
+        let loca_start = out.len();
+        let loca_size = loca_values.len();
+        let offset_size: usize = if self.index_format != 0 { 4 } else { 2 };
+        bail_if!((loca_size << 2) >> 2 != loca_size);
+        out.reserve(loca_size * offset_size);
+        if self.index_format != 0 {
+            for &value in &loca_values {
+                // loca long version. The actual local offset is stored.
+                out.put_u32(value);
+            }
+        } else {
+            for &value in &loca_values {
+                // loca short version. The actual local offset divided by 2 is stored.
+                // Right shift is a cheap divide by 2
+                out.put_u16((value >> 1) as u16);
+            }
+        }
+        let loca_len = out.len() - loca_start;
+        let loca_checksum = compute_checksum(&out[loca_start..]);
+        out.resize(Round4!(out.len()), 0);
 
         Ok(GlyfAndLocaData {
             num_glyphs: self.num_glyphs,
-            index_format: self.index_format,
-            x_mins,
-            loca_table,
-            loca_checksum,
-            glyf_table,
+            glyf_len,
             glyf_checksum,
+            loca_len,
+            loca_checksum,
+            x_mins,
         })
     }
 
@@ -241,15 +277,17 @@ impl GlyfDecoder<'_> {
         n_contours: u16,
         glyph_has_bbox: bool,
         has_overlap_bit: bool,
+        points: &mut Vec<Point>,
+        n_points: &mut Vec<u16>,
     ) -> Result<(), WuffErr> {
         let n_contours = n_contours as usize;
 
         // simple glyph
-        let mut n_points_vec: Vec<u16> = Vec::with_capacity(n_contours);
+        n_points.clear();
         let mut total_n_points: u32 = 0;
         for _ in 0..n_contours {
             let n_points_contour: u16 = self.n_points_stream.try_get_variable_255_u16()?;
-            n_points_vec.push(n_points_contour);
+            n_points.push(n_points_contour);
             bail_if!(u32_will_overflow(total_n_points, n_points_contour as u32));
             total_n_points += n_points_contour as u32;
         }
@@ -259,11 +297,10 @@ impl GlyfDecoder<'_> {
         let flags_buf = self.flag_stream;
         let triplet_buf = self.glyph_stream;
 
-        let mut triplet_bytes_consumed: usize = 0;
-
-        let mut points = Vec::with_capacity(total_n_points as usize);
-        triplet_bytes_consumed +=
-            decode_triplet(&flags_buf[0..flag_size], triplet_buf, &mut points)?;
+        points.clear();
+        points.reserve(total_n_points as usize);
+        let (triplet_bytes_consumed, bbox) =
+            decode_triplet(&flags_buf[0..flag_size], triplet_buf, points)?;
 
         self.flag_stream.advance(flag_size);
         self.glyph_stream.advance(triplet_bytes_consumed); // FIXME: pass glyph_stream directly to decode_triplet instead?
@@ -285,14 +322,17 @@ impl GlyfDecoder<'_> {
             self.bbox_stream
                 .try_read_bytes_into(8, &mut self.glyph_buf)?;
         } else {
-            write_bbox(points.as_slice(), &mut self.glyph_buf);
+            self.glyph_buf.put_i16(bbox.x_min as i16);
+            self.glyph_buf.put_i16(bbox.y_min as i16);
+            self.glyph_buf.put_i16(bbox.x_max as i16);
+            self.glyph_buf.put_i16(bbox.y_max as i16);
         }
 
         // From this point, stop writing to the end of the glyph buffer and write to earlier in the buffer
         // let mut writer = &mut÷ self.glyph_buf[END_PTS_OF_CONTOURS_OFFSET..];
 
         let mut end_point: i32 = -1;
-        for countour in n_points_vec {
+        for &countour in n_points.iter() {
             end_point += countour as i32;
             bail_if!(end_point >= 65536);
             self.glyph_buf.put_u16(end_point as u16);
@@ -318,8 +358,6 @@ fn write_glyph_points(
     // Write flags
     let mut last_flag: u8 = u8::MAX; // not a valid flag so next flag will never be equal to it
     let mut repeat_count: u8 = 0;
-    let mut last_x: i32 = 0;
-    let mut last_y: i32 = 0;
     for (i, point) in points.iter().enumerate() {
         // Compute flag value
         let flag = {
@@ -333,7 +371,7 @@ fn write_glyph_points(
             }
 
             // Handle x
-            let dx: i32 = point.x - last_x;
+            let dx: i32 = point.x;
             if dx == 0 {
                 flag |= GLYF_THIS_X_IS_SAME;
             } else if dx > -256 && dx < 256 {
@@ -343,7 +381,7 @@ fn write_glyph_points(
             }
 
             // Handle y
-            let dy: i32 = point.y - last_y;
+            let dy: i32 = point.y;
             if dy == 0 {
                 flag |= GLYF_THIS_Y_IS_SAME;
             } else if dy > -256 && dy < 256 {
@@ -394,8 +432,6 @@ fn write_glyph_points(
         }
 
         // Store values from this iteration
-        last_x = point.x;
-        last_y = point.y;
         last_flag = flag;
     }
 
@@ -410,9 +446,8 @@ fn write_glyph_points(
     }
 
     // Write x coordinates
-    last_x = 0;
     for point in points {
-        let dx: i32 = point.x - last_x;
+        let dx: i32 = point.x;
         if dx == 0 {
             // do nothing
         } else if dx > -256 && dx < 256 {
@@ -421,13 +456,11 @@ fn write_glyph_points(
             // will always fit for valid input, but overflow is harmless
             dst.put_i16(dx as i16)
         }
-        last_x += dx;
     }
 
     // Write y coordinates
-    last_y = 0;
     for point in points {
-        let dy: i32 = point.y - last_y;
+        let dy: i32 = point.y;
         if dy == 0 {
             // do nothing
         } else if dy > -256 && dy < 256 {
@@ -435,38 +468,9 @@ fn write_glyph_points(
         } else {
             dst.put_i16(dy as i16)
         }
-        last_y += dy;
     }
 
     Ok(())
-}
-
-/// Compute the bounding box of the coordinates, and store into a glyf buffer.
-/// A precondition is that there are at least 10 bytes available.
-/// dst should point to the beginning of a 'glyf' record.
-fn write_bbox(points: &[Point], dst: &mut impl BufMut) {
-    let mut x_min: i32 = 0;
-    let mut y_min: i32 = 0;
-    let mut x_max: i32 = 0;
-    let mut y_max: i32 = 0;
-
-    if !points.is_empty() {
-        x_min = points[0].x;
-        x_max = points[0].x;
-        y_min = points[0].y;
-        y_max = points[0].y;
-    }
-    for &Point { x, y, .. } in points.iter().skip(1) {
-        x_min = x.min(x_min);
-        x_max = x.max(x_max);
-        y_min = y.min(y_min);
-        y_max = y.max(y_max);
-    }
-
-    dst.put_i16(x_min as i16);
-    dst.put_i16(y_min as i16);
-    dst.put_i16(x_max as i16);
-    dst.put_i16(y_max as i16);
 }
 
 fn compute_size_of_composite(composite_stream: &mut impl Buf) -> Result<(usize, bool), WuffErr> {
@@ -499,7 +503,13 @@ fn compute_size_of_composite(composite_stream: &mut impl Buf) -> Result<(usize, 
     Ok((bytes_read, we_have_instructions))
 }
 
-fn decode_triplet(flags_in: &[u8], in_: &[u8], result: &mut Vec<Point>) -> Result<usize, WuffErr> {
+/// Decode triplet-encoded point deltas, appending points (stored as per-point
+/// deltas) to `result`. Returns bytes consumed and the absolute bounding box.
+fn decode_triplet(
+    flags_in: &[u8],
+    in_: &[u8],
+    result: &mut Vec<Point>,
+) -> Result<(usize, Bbox), WuffErr> {
     #[inline(always)]
     fn with_sign(flag: i32, baseval: i32) -> i32 {
         // Precondition: 0 <= baseval < 65536 (to avoid integer overflow)
@@ -514,6 +524,8 @@ fn decode_triplet(flags_in: &[u8], in_: &[u8], result: &mut Vec<Point>) -> Resul
 
     let mut x: i32 = 0;
     let mut y: i32 = 0;
+    let mut bbox = Bbox::default();
+    let mut have_points = false;
 
     bail_if!(flags_in.len() > in_.len());
 
@@ -581,49 +593,27 @@ fn decode_triplet(flags_in: &[u8], in_: &[u8], result: &mut Vec<Point>) -> Resul
         x = safe_add(x, dx)?;
         y = safe_add(y, dy)?;
 
-        result.push(Point { x, y, on_curve }); // CHECK: was *result++
+        if !have_points {
+            have_points = true;
+            bbox = Bbox {
+                x_min: x,
+                y_min: y,
+                x_max: x,
+                y_max: y,
+            };
+        } else {
+            bbox.x_min = x.min(bbox.x_min);
+            bbox.x_max = x.max(bbox.x_max);
+            bbox.y_min = y.min(bbox.y_min);
+            bbox.y_max = y.max(bbox.y_max);
+        }
+
+        result.push(Point {
+            x: dx,
+            y: dy,
+            on_curve,
+        }); // deltas, not absolutes
     }
 
-    Ok(triplet_index)
+    Ok((triplet_index, bbox))
 }
-
-/// Generate a loca table given a slice of loca offsets and an index format
-///
-/// See <https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6loca.html>
-pub(crate) fn generate_loca_table(
-    loca_values: &[u32],
-    index_format: u16,
-) -> Result<(Vec<u8>, u32), WuffErr> {
-    let loca_size = loca_values.len();
-    let offset_size: usize = if index_format != 0 { 4 } else { 2 };
-    bail_if!((loca_size << 2) >> 2 != loca_size);
-
-    let mut loca_content: Vec<u8> = Vec::with_capacity(loca_size * offset_size);
-    if index_format != 0 {
-        for &value in loca_values {
-            // loca long version. The actual local offset is stored.
-            loca_content.put_u32(value);
-        }
-    } else {
-        for &value in loca_values {
-            // loca short version. The actual local offset divided by 2 is stored.
-            // Right shift is a cheap divide by 2
-            loca_content.put_u16((value >> 1) as u16);
-        }
-    }
-
-    let checksum = compute_checksum(&loca_content);
-
-    Ok((loca_content, checksum))
-}
-
-// MOVE assert up:
-//
-// // https://dev.w3.org/webfonts/WOFF2/spec/#conform-mustRejectLoca
-// // dst_length here is origLength in the spec
-// let expected_loca_dst_length: u32 =
-//     (if info.index_format != 0 { 4 } else { 2 }) * (info.num_glyphs as u32 + 1);
-
-// if PREDICT_FALSE(loca_table.dst_length != expected_loca_dst_length) {
-//     return FONT_COMPRESSION_FAILURE();
-// }

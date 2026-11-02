@@ -28,7 +28,7 @@ pub use decompress_woff1::decompress_woff1;
 
 #[cfg(any(feature = "brotli", feature = "brotli-c"))]
 #[cfg_attr(docsrs, doc(cfg(any(feature = "brotli", feature = "brotli-c"))))]
-pub use brotli::decompress_woff2;
+pub use brotli::{decompress_woff2, decompress_woff2_with_limit};
 
 const HEAD: Tag = Tag::new(b"head");
 const HHEA: Tag = Tag::new(b"hhea");

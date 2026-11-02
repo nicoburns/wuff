@@ -37,6 +37,12 @@ let woff2_bytes = std::fs::read("font.woff2")?;
 let otf_bytes = wuff::decompress_woff2(&woff2_bytes)?;
 ```
 
+This fork limits WOFF2 input, decompressed streams, and reconstructed font
+data to 16 MiB. Use `decompress_woff2_with_limit(&woff2_bytes, limit)` with a
+built-in Brotli backend to impose a lower limit. These limits do not bound all
+temporary allocations or total process memory. See `INK-CHANGES.md` in the
+repository for the other limits applied by this fork.
+
 Decode a WOFF (version 1) file:
 
 ```rust

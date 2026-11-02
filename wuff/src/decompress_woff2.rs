@@ -22,9 +22,11 @@ use crate::{
 // >100 suggests you wrote a bad uncompressed size.
 const K_MAX_PLAUSIBLE_COMPRESSION_RATIO: f32 = 100.0;
 
-// Absolute cap on the decompressed data and reconstructed font size (matches upstream woff2's
-// `kDefaultMaxSize`). The compression-ratio check alone permits huge outputs for large inputs.
-const MAX_OUTPUT_SIZE: usize = 128 * 1024 * 1024;
+// Ink's per-face cap is lower than upstream's 128 MiB because fonts run on
+// memory-constrained devices. The caller can impose a smaller remaining budget.
+pub(crate) const MAX_OUTPUT_SIZE: usize = 16 * 1024 * 1024;
+pub(crate) const MAX_TABLES: usize = 256;
+pub(crate) const MAX_COLLECTION_FONTS: usize = 128;
 
 #[allow(clippy::type_complexity)]
 /// Decompress a WOFF2 file using a custom brotli decompressor passed as a closure
@@ -32,6 +34,16 @@ pub fn decompress_woff2_with_custom_brotli(
     raw_woff_data: &[u8],
     decompress_brotli: &mut dyn FnMut(&[u8], usize) -> Result<Vec<u8>, Box<dyn Error>>,
 ) -> Result<Vec<u8>, WuffErr> {
+    decompress_woff2_with_custom_brotli_and_limit(raw_woff_data, decompress_brotli, MAX_OUTPUT_SIZE)
+}
+
+#[allow(clippy::type_complexity)]
+pub(crate) fn decompress_woff2_with_custom_brotli_and_limit(
+    raw_woff_data: &[u8],
+    decompress_brotli: &mut dyn FnMut(&[u8], usize) -> Result<Vec<u8>, Box<dyn Error>>,
+    limit: usize,
+) -> Result<Vec<u8>, WuffErr> {
+    let limit = limit.min(MAX_OUTPUT_SIZE);
     // Here we create a new view over the `raw_woff_data`. Because we pass `&mut input` to parsing functons,
     // they will actually mutate the slice (not the data it points to) such that it only includes unparsed data.
     //
@@ -42,6 +54,9 @@ pub fn decompress_woff2_with_custom_brotli(
     // Parse header, table directory and collection directory
     let header = WoffHeader::parse(&mut input)?;
     bail_if!(header.woff_version != WoffVersion::Woff2);
+    bail_if!(raw_woff_data.len() > MAX_OUTPUT_SIZE);
+    bail_if!(header.total_sfnt_size as usize > limit);
+    bail_if!(header.num_tables as usize > MAX_TABLES);
 
     let table_directory = TableDirectory::parse_woff2(&mut input, header.num_tables as usize)?;
     let mut collection_directory = if header.is_collection() {
@@ -75,6 +90,7 @@ pub fn decompress_woff2_with_custom_brotli(
     // Re-order tables in output (OTSpec) order
     collection_directory.sort_tables_within_each_font(&table_directory);
     let num_fonts = collection_directory.fonts.len();
+    bail_if!(compute_header_size(&collection_directory, header.is_collection()) > limit);
 
     // Compute compression ratio using the trusted, table-directory-derived uncompressed size
     // (not the untrusted `totalSfntSize` from the file header). Perform the plausibility check
@@ -89,7 +105,7 @@ pub fn decompress_woff2_with_custom_brotli(
         "Implausible compression ratio {:.1}",
         compression_ratio
     );
-    bail_if!(table_directory.uncompressed_size > MAX_OUTPUT_SIZE);
+    bail_if!(table_directory.uncompressed_size > limit);
 
     // Decompress data with brotli decoder. We pass the trusted `uncompressed_size` as the hard
     // upper bound on the size of the decompressed data.
@@ -124,7 +140,7 @@ pub fn decompress_woff2_with_custom_brotli(
         expected_sfnt_size
     }
     .min(max_plausible_size)
-    .min(MAX_OUTPUT_SIZE as u64) as usize;
+    .min(limit as u64) as usize;
     let mut out: Vec<u8> = Vec::with_capacity(capacity_hint);
 
     let mut out_header = generate_header(&header, &table_directory, &collection_directory);
@@ -142,10 +158,11 @@ pub fn decompress_woff2_with_custom_brotli(
             &mut table_metadata,
             &mut out,
             i,
+            limit,
         )?;
     }
 
-    bail_if!(out.len() > MAX_OUTPUT_SIZE);
+    bail_if!(out.len() > limit);
 
     // Update header
     out[0..out_header.data.len()].copy_from_slice(&out_header.data);
@@ -184,6 +201,7 @@ fn reconstruct_font(
     table_metadata: &mut [Option<TableMetadata>],
     out: &mut Vec<u8>,
     font_idx: usize,
+    limit: usize,
 ) -> Result<(), WuffErr> {
     let glyf_idx = font_entry.glyf_idx.map(|idx| idx as usize);
     let loca_idx = font_entry.loca_idx.map(|idx| idx as usize);
@@ -266,6 +284,7 @@ fn reconstruct_font(
             };
             table_metadata[table_idx] = Some(metadata);
 
+            bail_if!(table_data.len() > limit.saturating_sub(out.len()));
             out.extend_from_slice(table_data);
             out.resize(Round4!(out.len()), 0);
 
@@ -278,7 +297,8 @@ fn reconstruct_font(
 
             // Generate transformed glyf and loca tables
             let raw_glyf_table_data = table.data_as_slice(woff_data)?;
-            let glyf_and_loca_data = tranform_glyf_table(raw_glyf_table_data)?;
+            let glyf_and_loca_data =
+                tranform_glyf_table(raw_glyf_table_data, limit.saturating_sub(out.len()))?;
 
             // The origLength of the loca table declared in the table directory must exactly
             // match the size of the reconstructed loca table.
@@ -294,6 +314,7 @@ fn reconstruct_font(
 
             // Write glyf table
             let glyf_dest_offset = out.len();
+            bail_if!(glyf_and_loca_data.glyf_table.len() > limit.saturating_sub(out.len()));
             out.extend_from_slice(&glyf_and_loca_data.glyf_table);
             out.resize(Round4!(out.len()), 0);
             let glyf_metadata = TableMetadata {
@@ -305,6 +326,7 @@ fn reconstruct_font(
 
             // Write loca table
             let loca_dest_offset = out.len();
+            bail_if!(glyf_and_loca_data.loca_table.len() > limit.saturating_sub(out.len()));
             out.extend_from_slice(&glyf_and_loca_data.loca_table);
             out.resize(Round4!(out.len()), 0);
             let loca_metdata = TableMetadata {
@@ -341,6 +363,7 @@ fn reconstruct_font(
 
             // Write table to output buffer
             let dest_offset = out.len();
+            bail_if!(hmtx_table.len() > limit.saturating_sub(out.len()));
             out.extend_from_slice(&hmtx_table);
             out.resize(Round4!(out.len()), 0);
             // Note: like the reference implementation, we record the origLength declared in

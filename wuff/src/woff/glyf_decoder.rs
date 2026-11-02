@@ -52,8 +52,8 @@ pub struct GlyfAndLocaData {
 /// Decode a WOFF2 transformed glyf table
 ///
 /// <https://www.w3.org/TR/WOFF2/#glyf_table_format>
-pub(crate) fn tranform_glyf_table(data: &[u8]) -> Result<GlyfAndLocaData, WuffErr> {
-    GlyfDecoder::new(data)?.transform()
+pub(crate) fn tranform_glyf_table(data: &[u8], limit: usize) -> Result<GlyfAndLocaData, WuffErr> {
+    GlyfDecoder::new(data)?.transform(limit)
 }
 
 pub struct GlyfDecoder<'a> {
@@ -135,10 +135,11 @@ impl GlyfDecoder<'_> {
         })
     }
 
-    pub fn transform(mut self) -> Result<GlyfAndLocaData, WuffErr> {
+    pub fn transform(mut self, limit: usize) -> Result<GlyfAndLocaData, WuffErr> {
         // Setup state
         let mut glyf_checksum: u32 = 0;
-        let mut glyf_table: Vec<u8> = Vec::with_capacity(self.num_glyphs as usize * 12);
+        let mut glyf_table: Vec<u8> =
+            Vec::with_capacity((self.num_glyphs as usize * 12).min(limit));
         let mut loca_values: Vec<u32> = Vec::with_capacity(self.num_glyphs as usize + 1);
         let mut x_mins: Vec<i16> = vec![0; self.num_glyphs as usize];
 
@@ -153,13 +154,13 @@ impl GlyfDecoder<'_> {
             if n_contours == 0xFFFF {
                 // composite glyphs must have an explicit bbox
                 bail_if!(!glyph_has_bbox);
-                self.parse_composite_glyph()?;
+                self.parse_composite_glyph(limit)?;
             } else if n_contours > 0 {
                 // Note: while this look similar to the glyph_has_bbox code above, it's indexing into a different bitmap
                 let has_overlap_bit: bool = self
                     .overlap_bitmap
                     .is_some_and(|bitmap| (bitmap[i >> 3] & (0x80 >> (i & 7))) != 0);
-                self.parse_simple_glyph(n_contours, glyph_has_bbox, has_overlap_bit)?;
+                self.parse_simple_glyph(n_contours, glyph_has_bbox, has_overlap_bit, limit)?;
             } else {
                 // n_contours == 0; empty glyph. Must NOT have a bbox.
                 bail_with_msg_if!(glyph_has_bbox, "Empty glyph has a bbox")
@@ -171,8 +172,10 @@ impl GlyfDecoder<'_> {
             //
             // TODO(user) Old code aligned glyphs ... but do we actually need to?
             // (definitely useful for loca)
+            bail_if!(self.glyph_buf.len() > limit.saturating_sub(glyf_table.len()));
             glyf_table.extend_from_slice(&self.glyph_buf);
             glyf_table.resize(Round4!(glyf_table.len()), 0);
+            bail_if!(glyf_table.len() > limit);
 
             // Read the x_min of the glyph in case we nede it to reconstruct 'hmtx'
             // The x_min value an i16 stored as bytes 2-4 in the glyph header.
@@ -186,6 +189,10 @@ impl GlyfDecoder<'_> {
         loca_values.push(glyf_table.len() as u32);
 
         // Generate loca table
+        let offset_size = if self.index_format == 0 { 2 } else { 4 };
+        bail_if!(
+            loca_values.len().saturating_mul(offset_size) > limit.saturating_sub(glyf_table.len())
+        );
         let (loca_table, loca_checksum) = generate_loca_table(&loca_values, self.index_format)?;
 
         Ok(GlyfAndLocaData {
@@ -200,7 +207,7 @@ impl GlyfDecoder<'_> {
     }
 
     /// Parse glyph data into `self.glyph_buf`
-    fn parse_composite_glyph(&mut self) -> Result<(), WuffErr> {
+    fn parse_composite_glyph(&mut self, limit: usize) -> Result<(), WuffErr> {
         // Create a new iterator over the composite stream when computing the size so that we
         // we can "rewind" and copy the bytes counted here below.
         let mut ro_composite_stream = self.composite_stream;
@@ -214,6 +221,7 @@ impl GlyfDecoder<'_> {
         };
 
         let size_needed: usize = 12 + composite_size + (instruction_size as usize);
+        bail_if!(size_needed > limit);
         if size_needed > self.glyph_buf.capacity() {
             self.glyph_buf
                 .reserve(size_needed - self.glyph_buf.capacity());
@@ -241,6 +249,7 @@ impl GlyfDecoder<'_> {
         n_contours: u16,
         glyph_has_bbox: bool,
         has_overlap_bit: bool,
+        limit: usize,
     ) -> Result<(), WuffErr> {
         let n_contours = n_contours as usize;
 
@@ -255,6 +264,7 @@ impl GlyfDecoder<'_> {
         }
         let flag_size: usize = total_n_points as usize;
         bail_if!(flag_size > self.flag_stream.len());
+        bail_if!(flag_size > limit / core::mem::size_of::<Point>());
 
         let flags_buf = self.flag_stream;
         let triplet_buf = self.glyph_stream;
@@ -274,6 +284,7 @@ impl GlyfDecoder<'_> {
         // Reserve needed size to reduce allocations
         let size_needed: usize =
             12 + 2 * n_contours + 5 * (total_n_points as usize) + (instruction_size as usize);
+        bail_if!(size_needed > limit);
         if self.glyph_buf.capacity() < size_needed {
             self.glyph_buf
                 .reserve(size_needed - self.glyph_buf.capacity());

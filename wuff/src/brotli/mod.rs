@@ -14,7 +14,7 @@
 use alloc::vec::Vec;
 
 use crate::WuffErr;
-use crate::decompress_woff2_with_custom_brotli;
+use crate::decompress_woff2::{MAX_OUTPUT_SIZE, decompress_woff2_with_custom_brotli_and_limit};
 
 #[cfg(feature = "brotli-c")]
 mod c;
@@ -28,5 +28,13 @@ use rust::decompress_brotli;
 
 /// Decompress a WOFF2 file using the built-in brotli decompressor
 pub fn decompress_woff2(raw_woff_data: &[u8]) -> Result<Vec<u8>, WuffErr> {
-    decompress_woff2_with_custom_brotli(raw_woff_data, &mut decompress_brotli)
+    decompress_woff2_with_limit(raw_woff_data, MAX_OUTPUT_SIZE)
+}
+
+/// Decode with a caller-provided limit on decompressed and reconstructed data.
+///
+/// The limit is capped at 16 MiB and does not bound all decoder allocations or
+/// the process's total peak memory usage.
+pub fn decompress_woff2_with_limit(raw_woff_data: &[u8], limit: usize) -> Result<Vec<u8>, WuffErr> {
+    decompress_woff2_with_custom_brotli_and_limit(raw_woff_data, &mut decompress_brotli, limit)
 }

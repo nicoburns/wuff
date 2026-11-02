@@ -5,6 +5,7 @@ use core::ops::{Deref, DerefMut};
 use crate::Tag;
 use bytes::Buf;
 
+use crate::decompress_woff2::{MAX_COLLECTION_FONTS, MAX_TABLES};
 use crate::error::{WuffErr, bail, bail_if, bail_with_msg_if, usize_will_overflow};
 use crate::table_tags::KNOWN_TABLE_TAGS;
 use crate::variable_length::BufVariableExt;
@@ -402,6 +403,7 @@ impl CollectionDirectory {
 
         bail_if!(version != 0x00010000 && version != 0x00020000);
         bail_if!(num_fonts == 0);
+        bail_if!(num_fonts as usize > MAX_COLLECTION_FONTS);
 
         let mut fonts = Vec::with_capacity(num_fonts as usize);
         for _ in 0..num_fonts {
@@ -513,6 +515,7 @@ impl CollectionDirectoryEntry {
         let flavor = Tag::from_u32(input.try_get_u32()?);
 
         bail_if!(num_tables == 0);
+        bail_if!(num_tables as usize > MAX_TABLES);
 
         let mut head_idx: Option<u16> = None;
         let mut hhea_idx: Option<u16> = None;

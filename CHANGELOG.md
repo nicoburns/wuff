@@ -7,10 +7,6 @@
 - Add `brotli-unsafe` feature flag which enables `brotli-decompressor`'s `unsafe` feature (removes
   bounds checks and buffer initialization inside the decoder; the public API stays safe). Measured
   ~5-12% faster brotli decompression. Not `no_std`-compatible.
-- Add `brotli-c` feature flag which uses Google's C brotli implementation (via the `brotlic` crate)
-  as the built-in WOFF2 decompressor. Measured ~6-14% faster end-to-end WOFF2 decoding. Requires a
-  C toolchain at build time and is not `no_std`-compatible. Takes precedence over
-  `brotli`/`brotli-unsafe` when enabled together.
 
 ## 0.2.9
 - Fix a memory-usage regression introduced in 0.2.7: the WOFF2 output buffer could retain up to

@@ -46,7 +46,7 @@ debug = []
 bytes = { version = "1.10.1", default-features = false }
 # `brotli` is no_std-compatible: we drive `brotli-decompressor` with our own
 # `alloc`-backed allocator, so its `std` default feature is disabled.
-brotli-decompressor = { version = "5.0.0", optional = true, default-features = false }
+brotli-decompressor = { version = "6.2.0", optional = true, default-features = false }
 # `brotlic` (the `brotli-c` feature) binds Google's C brotli implementation. It
 # requires a C toolchain and is not no_std-compatible.
 brotlic = { version = "0.8", optional = true }

@@ -1,6 +1,9 @@
 # Changelog
 
 ## 0.2.10
+- Update `brotli-decompressor` to 6.2.0. Earlier versions mishandle a crafted brotli stream the same
+  way as the C decoder in CVE-2026-111497: decoding a malicious WOFF2 file panics with the default
+  `brotli` backend and writes out of bounds with `brotli-unsafe`.
 - Add `brotli-unsafe` feature flag which enables `brotli-decompressor`'s `unsafe` feature (removes
   bounds checks and buffer initialization inside the decoder; the public API stays safe). Measured
   ~5-12% faster brotli decompression. Not `no_std`-compatible.

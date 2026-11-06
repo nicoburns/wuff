@@ -253,6 +253,9 @@ impl GlyfDecoder<'_> {
             bail_if!(u32_will_overflow(total_n_points, n_points_contour as u32));
             total_n_points += n_points_contour as u32;
         }
+        // The end points written below are u16, so a glyph holds at most 65536 points. Check it
+        // before anything is reserved for them: `points` takes 12 bytes per point.
+        bail_if!(total_n_points > 1 << 16);
         let flag_size: usize = total_n_points as usize;
         bail_if!(flag_size > self.flag_stream.len());
 
@@ -627,3 +630,45 @@ pub(crate) fn generate_loca_table(
 // if PREDICT_FALSE(loca_table.dst_length != expected_loca_dst_length) {
 //     return FONT_COMPRESSION_FAILURE();
 // }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A transformed glyf table of one simple glyph whose contours have the given point counts,
+    /// each point a one-byte triplet, with no instructions.
+    fn one_glyph(points: &[u16]) -> Vec<u8> {
+        let total: usize = points.iter().map(|&n| n as usize).sum();
+        let n_contours = (points.len() as u16).to_be_bytes().to_vec();
+        let n_points: Vec<u8> = points
+            .iter()
+            .flat_map(|n| [&[253][..], &n.to_be_bytes()].concat())
+            .collect();
+        let flags = vec![20u8; total];
+        let mut glyphs = vec![0x11u8; total];
+        glyphs.push(0); // instruction length
+        let bbox = vec![0u8; 4]; // bitmap only
+        let streams = [n_contours, n_points, flags, glyphs, vec![], bbox, vec![]];
+        let mut table = vec![0, 0, 0, 0, 0, 1, 0, 1]; // reserved, flags, numGlyphs 1, indexFormat 1
+        for stream in &streams {
+            table.extend((stream.len() as u32).to_be_bytes());
+        }
+        for stream in &streams {
+            table.extend(stream);
+        }
+        table
+    }
+
+    #[test]
+    fn glyph_of_65536_points_decodes() {
+        let glyf = tranform_glyf_table(&one_glyph(&[65535, 1])).unwrap();
+        assert_eq!(glyf.num_glyphs, 1);
+    }
+
+    #[test]
+    fn glyph_past_65536_points_is_rejected_before_its_points_are_reserved() {
+        assert!(tranform_glyf_table(&one_glyph(&[65535, 2])).is_err());
+        // 400 contours of 65535 points: 26 million points, 314 MB of `Point`s if reserved.
+        assert!(tranform_glyf_table(&one_glyph(&[65535; 400])).is_err());
+    }
+}

@@ -11,10 +11,16 @@ use core::error::Error;
 
 #[cfg(feature = "z")]
 fn decompress_z(compressed_data: &[u8], size_hint: usize) -> Result<Vec<u8>, Box<dyn Error>> {
-    use flate2::{Decompress, FlushDecompress};
+    use flate2::{Decompress, FlushDecompress, Status};
     let mut output: Vec<u8> = Vec::with_capacity(size_hint);
     let mut decompressor = Decompress::new(true);
-    decompressor.decompress_vec(compressed_data, &mut output, FlushDecompress::Finish)?;
+    let status =
+        decompressor.decompress_vec(compressed_data, &mut output, FlushDecompress::Finish)?;
+    // `decompress_vec` stops when `output` is full, so the stream must also have ended there,
+    // and it must take up all of `compressed_data`.
+    if status != Status::StreamEnd || decompressor.total_in() != compressed_data.len() as u64 {
+        return Err(Box::new(WuffErr::GenericError));
+    }
     Ok(output)
 }
 
@@ -92,6 +98,9 @@ pub fn decompress_woff1_with_custom_z(
         // Write table data
         let is_compressed = table.woff_length < table.orig_length;
         if is_compressed {
+            // A zlib stream expands to at most 1032 times its length, so a larger `origLength`
+            // is invalid. Check it before `origLength` is used to size the output.
+            bail_if!(table.orig_length as u64 > table.woff_length as u64 * 1032);
             let compressed_data = table.data_as_slice(raw_woff_data)?;
             let decompressed_data = decompress_z(compressed_data, table.orig_length as usize)
                 .map_err(|_| WuffErr::GenericError)?;
@@ -112,4 +121,73 @@ pub fn decompress_woff1_with_custom_z(
     // TODO: Checksum adjustment
 
     Ok(out)
+}
+
+#[cfg(all(test, feature = "z"))]
+mod tests {
+    use super::*;
+    use alloc::vec;
+    use flate2::{Compress, Compression, FlushCompress};
+
+    /// A zlib stream of `len` zero bytes.
+    fn zlib_zeros(len: usize) -> Vec<u8> {
+        let mut out = Vec::with_capacity(len + 64);
+        Compress::new(Compression::best(), true)
+            .compress_vec(&vec![0; len], &mut out, FlushCompress::Finish)
+            .unwrap();
+        out
+    }
+
+    /// A WOFF file of one table whose data is `table_data`, stating `orig_length`.
+    fn one_table_woff(table_data: &[u8], orig_length: u32) -> Vec<u8> {
+        let length = 44 + 20 + Round4!(table_data.len());
+        let mut woff = Vec::new();
+        woff.put_slice(b"wOFF");
+        woff.put_u32(0x00010000); // flavor
+        woff.put_u32(length as u32);
+        woff.put_u16(1); // numTables
+        woff.put_u16(0); // reserved
+        woff.put_u32((12 + 16 + Round4!(orig_length as u64)) as u32); // totalSfntSize
+        woff.put_u32(0x00010000); // majorVersion, minorVersion
+        woff.put_bytes(0, 20); // no metadata or private data
+        woff.put_slice(b"zero");
+        woff.put_u32(64); // offset
+        woff.put_u32(table_data.len() as u32); // compLength
+        woff.put_u32(orig_length);
+        woff.put_u32(0); // origChecksum
+        woff.put_slice(table_data);
+        woff.resize(length, 0);
+        woff
+    }
+
+    #[test]
+    fn zlib_table_of_orig_length_decodes() {
+        let sfnt = decompress_woff1(&one_table_woff(&zlib_zeros(4129), 4129)).unwrap();
+        assert_eq!(sfnt.len(), 12 + 16 + 4132);
+    }
+
+    #[test]
+    fn zlib_table_longer_than_orig_length_is_rejected() {
+        assert!(decompress_woff1(&one_table_woff(&zlib_zeros(4130), 4129)).is_err());
+        assert!(decompress_woff1(&one_table_woff(&zlib_zeros(6709), 4129)).is_err());
+    }
+
+    #[test]
+    fn zlib_table_shorter_than_orig_length_is_rejected() {
+        assert!(decompress_woff1(&one_table_woff(&zlib_zeros(4128), 4129)).is_err());
+    }
+
+    #[test]
+    fn data_after_zlib_stream_is_rejected() {
+        let mut table_data = zlib_zeros(4129);
+        table_data.push(0);
+        assert!(decompress_woff1(&one_table_woff(&table_data, 4129)).is_err());
+    }
+
+    #[test]
+    fn orig_length_beyond_what_zlib_can_expand_to_is_rejected() {
+        // Rejected before 4 GB is reserved for the table.
+        let woff = one_table_woff(&zlib_zeros(16), 0xFFFF_FFFC);
+        assert!(decompress_woff1(&woff).is_err());
+    }
 }

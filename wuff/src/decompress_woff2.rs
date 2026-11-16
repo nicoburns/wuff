@@ -13,7 +13,7 @@ use crate::{
             CollectionDirectory, CollectionDirectoryEntry, TableDirectory, TableDirectoryEntry,
             WOFF2FontInfo, WoffHeader, WoffVersion,
         },
-        hmtx_decoder::{decode_hmtx_table, generate_hmtx_table},
+        hmtx_decoder::decode_hmtx_table,
     },
     write_table_directory_header,
 };
@@ -276,15 +276,19 @@ fn reconstruct_font(
             let loca_idx =
                 loca_idx.expect("We already returned an error if glyf is present but loca isn't");
 
-            // Generate transformed glyf and loca tables
+            // Reconstruct the glyf and loca tables, writing them directly into
+            // the output buffer. The declared origLength of the glyf table is
+            // the expected size of the reconstructed table, making it a good
+            // capacity hint (bounded by MAX_OUTPUT_SIZE).
             let raw_glyf_table_data = table.data_as_slice(woff_data)?;
-            let glyf_and_loca_data = tranform_glyf_table(raw_glyf_table_data)?;
+            let glyf_dest_offset = out.len();
+            let glyf_and_loca_data = tranform_glyf_table(raw_glyf_table_data, out)?;
 
             // The origLength of the loca table declared in the table directory must exactly
             // match the size of the reconstructed loca table.
             // <https://www.w3.org/TR/WOFF2/#conform-mustRejectLoca>
             bail_with_msg_if!(
-                tables[loca_idx].orig_length as usize != glyf_and_loca_data.loca_table.len(),
+                tables[loca_idx].orig_length as usize != glyf_and_loca_data.loca_len,
                 "loca table origLength does not match reconstructed loca size"
             );
 
@@ -292,25 +296,17 @@ fn reconstruct_font(
             num_glyphs = Some(glyf_and_loca_data.num_glyphs);
             x_mins = Some(glyf_and_loca_data.x_mins);
 
-            // Write glyf table
-            let glyf_dest_offset = out.len();
-            out.extend_from_slice(&glyf_and_loca_data.glyf_table);
-            out.resize(Round4!(out.len()), 0);
             let glyf_metadata = TableMetadata {
                 checksum: glyf_and_loca_data.glyf_checksum,
                 dst_offset: glyf_dest_offset as u32,
-                dst_length: glyf_and_loca_data.glyf_table.len() as u32,
+                dst_length: glyf_and_loca_data.glyf_len as u32,
             };
             table_metadata[table_idx] = Some(glyf_metadata);
 
-            // Write loca table
-            let loca_dest_offset = out.len();
-            out.extend_from_slice(&glyf_and_loca_data.loca_table);
-            out.resize(Round4!(out.len()), 0);
             let loca_metdata = TableMetadata {
                 checksum: glyf_and_loca_data.loca_checksum,
-                dst_offset: loca_dest_offset as u32,
-                dst_length: glyf_and_loca_data.loca_table.len() as u32,
+                dst_offset: (glyf_dest_offset + Round4!(glyf_and_loca_data.glyf_len)) as u32,
+                dst_length: glyf_and_loca_data.loca_len as u32,
             };
             table_metadata[loca_idx] = Some(loca_metdata);
 
@@ -332,16 +328,17 @@ fn reconstruct_font(
             let num_hmetrics = num_hmetrics.ok_or(WuffErr::GenericError)?;
             let x_mins = x_mins.as_ref().ok_or(WuffErr::GenericError)?;
 
-            // Generate reconstructed hmtx table
-            let mut raw_hmtx_table_data = table.data_as_slice(woff_data)?;
-            let hmtx_data =
-                decode_hmtx_table(&mut raw_hmtx_table_data, num_glyphs, num_hmetrics, x_mins)?;
-            let hmtx_table = generate_hmtx_table(&hmtx_data)?;
-            let checksum = compute_checksum(&hmtx_table);
-
-            // Write table to output buffer
+            // Generate reconstructed hmtx table, writing directly into the
+            // output buffer
             let dest_offset = out.len();
-            out.extend_from_slice(&hmtx_table);
+            decode_hmtx_table(
+                table.data_as_slice(woff_data)?,
+                num_glyphs,
+                num_hmetrics,
+                x_mins,
+                out,
+            )?;
+            let checksum = compute_checksum(&out[dest_offset..]);
             out.resize(Round4!(out.len()), 0);
             // Note: like the reference implementation, we record the origLength declared in
             // the WOFF2 table directory (rather than the size of the reconstructed table)
